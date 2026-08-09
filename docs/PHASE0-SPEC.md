@@ -132,7 +132,7 @@ Inspired by public designs of Jackal (deals/proofs), Filecoin (proving), Arweave
 
 ## 9. Milestone acceptance (this repo)
 
-- [ ] `vault-local-1` boots locally  
-- [ ] Register provider; open Personal plan + Market deal  
-- [ ] Upload encrypted blob to provider; stub proof accepted  
-- [ ] IBC payment policy documented and enforced via denom whitelist in storage params  
+- [x] `vault-local-1` boots locally  
+- [x] Register provider; open Personal plan + Market deal  
+- [x] Upload encrypted blob to provider; stub proof accepted  
+- [x] IBC payment policy documented and enforced via denom whitelist in storage params  

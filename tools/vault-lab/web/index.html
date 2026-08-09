@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vault Lab — Vaultchain</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+  <header class="hero">
+    <p class="eyebrow">vault-local-1 · clean-room L1</p>
+    <h1>Vault Lab</h1>
+    <p class="lede">Click-test personal capacity, market deals, archive deals, provider bytes, and IBC payment policy.</p>
+    <div class="meta" id="meta">connecting…</div>
+  </header>
+
+  <main>
+    <section class="rail">
+      <h2>Chain</h2>
+      <div class="actions">
+        <button data-action="GET" data-url="/api/status">Status</button>
+        <button data-action="GET" data-url="/api/balance">Balance</button>
+        <button data-action="GET" data-url="/api/ibc/policy">IBC policy</button>
+        <button data-action="POST" data-url="/api/ibc/mint-voucher" class="accent">Mint ibc/ATOM</button>
+      </div>
+    </section>
+
+    <section class="rail">
+      <h2>Storage</h2>
+      <div class="actions">
+        <button data-action="GET" data-url="/api/storage/params">Params</button>
+        <button data-action="GET" data-url="/api/providers">Providers</button>
+        <button data-action="GET" data-url="/api/storage/plans">Capacity plans</button>
+        <button data-action="GET" data-url="/api/storage/deals">Deals</button>
+        <button data-action="GET" data-url="/api/storage/proofs">Proofs</button>
+        <button data-action="POST" data-url="/api/storage/register-provider" class="accent">Register provider</button>
+        <button data-action="POST" data-url="/api/storage/buy-capacity" class="accent">Buy 1GiB personal</button>
+      </div>
+      <form id="upload-form" class="upload">
+        <label>Encrypt-marker + upload (opens market deal, stores bytes, stub proof)</label>
+        <textarea id="upload-text" rows="3" placeholder="Secret note for personal/market storage…"></textarea>
+        <div class="row">
+          <input type="file" id="upload-file" />
+          <button type="submit" class="accent">Deal + upload</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="rail">
+      <h2>Provider</h2>
+      <div class="actions">
+        <button data-action="GET" data-url="/api/provider/status">Status</button>
+        <button data-action="GET" data-url="/api/provider/files" data-after="renderProviderFiles">List objects</button>
+      </div>
+      <div id="provider-files" class="file-list"></div>
+    </section>
+
+    <section class="rail">
+      <h2>Access</h2>
+      <div class="actions">
+        <button data-action="GET" data-url="/api/access/grants">List grants</button>
+      </div>
+    </section>
+
+    <section class="out-wrap">
+      <div class="out-head">
+        <h2>Output</h2>
+        <button type="button" id="clear-out" class="ghost">Clear</button>
+      </div>
+      <pre id="out">Ready. Pick an action above.</pre>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

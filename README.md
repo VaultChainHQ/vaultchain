@@ -79,15 +79,33 @@ vaultd tx ibc-lab mint-voucher $(vaultd keys show alice --home ~/.vaultchain) ib
 ## Layout
 
 ```
-cmd/vaultd/     CLI + daemon entry
-node/           local engine (blocks, mempool, RPC, REST, bolt state)
-x/storage/      providers, capacity, deals, proofs, denom whitelist
-x/access/       AccessGrant store
-x/bank/         balances + escrow
-x/ibc/          payments-only policy + lab voucher mint
-crypto/         test keyring (secp256k1)
-docs/           Phase 0 + IBC policy
-scripts/        local init helper
+cmd/vaultd/            CLI + daemon entry
+node/                  local engine (blocks, mempool, RPC, REST, bolt state)
+x/storage/             providers, capacity, deals, proofs, denom whitelist
+x/access/              AccessGrant store
+x/bank/                balances + escrow
+x/ibc/                 payments-only policy + lab voucher mint
+crypto/                test keyring (secp256k1)
+tools/vault-provider/  native object store (upload/download by CID)
+tools/vault-lab/       click-to-test lab UI (:3456)
+docs/                  Phase 0 + IBC policy
+scripts/               init + start helpers
 ```
 
-Provider daemon and lab UI are separate components.
+## Provider + Lab
+
+```bash
+# terminal 1 — chain
+./scripts/init-vault-local.sh
+./build/vaultd start --home ~/.vaultchain
+
+# terminal 2 — provider (:3333)
+chmod +x scripts/*.sh
+./scripts/start-vault-provider.sh
+
+# terminal 3 — lab UI (:3456)
+./scripts/start-vault-lab.sh
+# From Windows against WSL, use the printed WSL IP, e.g. http://172.x.x.x:3456/
+```
+
+Lab flows: register provider → buy personal capacity → deal+upload encrypted blob → stub proof → IBC policy / mint voucher.
