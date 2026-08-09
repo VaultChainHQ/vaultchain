@@ -4,3 +4,5 @@ build/
 .idea/
 .vscode/
 *.log
+node_modules/
+docs/.foundation-tmp.html
