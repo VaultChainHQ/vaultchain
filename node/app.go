@@ -231,6 +231,9 @@ func (a *App) ExecuteBlock(in BlockInput) (*BlockResult, error) {
 		txsHasher.Write(h)
 		a.recordTx(bc, in.Height, i, raw, res)
 	}
+	if err := storage.NewKeeper(bc).EndBlock(in.Height, prevApp); err != nil {
+		return nil, fmt.Errorf("storage end-block: %w", err)
+	}
 	hdr := BlockHeader{
 		Height:      in.Height,
 		Time:        in.Time,

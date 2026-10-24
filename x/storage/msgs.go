@@ -43,11 +43,17 @@ type MsgOpenDeal struct {
 }
 
 type MsgSubmitProof struct {
-	Type        string `json:"type"`
-	From        string `json:"-"`
-	DealID      uint64 `json:"deal_id"`
-	CID         string `json:"cid"`
-	Attestation string `json:"attestation"`
+	Type   string `json:"type"`
+	From   string `json:"-"`
+	DealID uint64 `json:"deal_id"`
+	CID    string `json:"cid"`
+	// Epoch is the challenge epoch being answered (see Keeper.Challenge).
+	Epoch int64 `json:"epoch"`
+	// Chunk is the challenged chunk (base64 in JSON); Proof are the hex Merkle
+	// siblings for it (pkg/chunk.Prove). Chunks are capped at MaxChunkSize so a
+	// proof always fits in a transaction.
+	Chunk []byte   `json:"chunk"`
+	Proof []string `json:"proof"`
 }
 
 func MarshalMsg(v any) ([]byte, error) { return json.Marshal(v) }

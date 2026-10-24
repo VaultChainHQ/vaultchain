@@ -23,6 +23,25 @@ type Params struct {
 	BlockInterval int64  `json:"proof_interval_blocks"`
 	// MaxObjectBytes caps the size of a committed manifest (0 = unlimited).
 	MaxObjectBytes uint64 `json:"max_object_bytes"`
+	// MaxMissedProofs is how many consecutive challenge epochs a provider may
+	// skip before the deal fails (0 = default 3).
+	MaxMissedProofs uint32 `json:"max_missed_proofs"`
+}
+
+// MaxMissed returns the effective consecutive-miss limit.
+func (p Params) MaxMissed() uint32 {
+	if p.MaxMissedProofs == 0 {
+		return 3
+	}
+	return p.MaxMissedProofs
+}
+
+// Interval returns the effective challenge epoch length in blocks.
+func (p Params) Interval() int64 {
+	if p.BlockInterval <= 0 {
+		return 10
+	}
+	return p.BlockInterval
 }
 
 func DefaultParams() Params {
@@ -32,6 +51,7 @@ func DefaultParams() Params {
 		PricePerGB:            1_000_000, // 1 vault per GB reference
 		BlockInterval:         10,
 		MaxObjectBytes:        4 << 30, // 4 GiB
+		MaxMissedProofs:       3,
 	}
 }
 
@@ -75,15 +95,18 @@ type Deal struct {
 	Payment      sdk.Coin `json:"payment"`
 	Replication  uint32   `json:"replication"`
 	LastProvenH  int64    `json:"last_proven_height"`
-	MissedProofs uint32   `json:"missed_proofs"`
-	Status       string   `json:"status"` // open | closed | failed
+	MissedProofs uint32   `json:"missed_proofs"` // consecutive missed challenge epochs
+	// LastProvenEpoch is the epoch (its start height) of the last verified proof.
+	LastProvenEpoch int64  `json:"last_proven_epoch"`
+	Status          string `json:"status"` // open | closed | failed
 }
 
 type Proof struct {
-	ID          uint64 `json:"id"`
-	DealID      uint64 `json:"deal_id"`
-	CID         string `json:"cid"`
-	Provider    string `json:"provider"`
-	Height      int64  `json:"height"`
-	Attestation string `json:"attestation"`
+	ID         uint64 `json:"id"`
+	DealID     uint64 `json:"deal_id"`
+	CID        string `json:"cid"`
+	Provider   string `json:"provider"`
+	Height     int64  `json:"height"`
+	Epoch      int64  `json:"epoch"`
+	ChunkIndex uint64 `json:"chunk_index"`
 }

@@ -13,6 +13,10 @@ const MsgTypeCommitManifest = "storage/CommitManifest"
 // MinChunkSize), which in turn bounds what a provider has to index.
 const MinChunkSize = 4 * 1024
 
+// MaxChunkSize keeps a challenge response (one chunk, base64 in a tx) under
+// the 1 MiB request cap.
+const MaxChunkSize = 512 * 1024
+
 var prefixManifest = []byte("storage/manifest/")
 
 // MsgCommitManifest registers an object's content ID and shape on chain. The
@@ -78,6 +82,9 @@ func (k Keeper) CommitManifest(msg MsgCommitManifest, height int64) error {
 	}
 	if msg.ChunkSize < MinChunkSize {
 		return fmt.Errorf("chunk_size must be >= %d", MinChunkSize)
+	}
+	if msg.ChunkSize > MaxChunkSize {
+		return fmt.Errorf("chunk_size must be <= %d (a proof carries a whole chunk)", MaxChunkSize)
 	}
 	if _, exists := k.Manifest(msg.Root); exists {
 		return fmt.Errorf("manifest %s already committed", msg.Root)

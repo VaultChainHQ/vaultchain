@@ -23,7 +23,7 @@ const (
 	// SignDomain prefixes every sign document (domain separation).
 	SignDomain = "vaultchain/tx/v1\n"
 
-	MaxTxBytes   = 128 << 10
+	MaxTxBytes   = 1 << 20 // a storage proof carries one chunk (<= storage.MaxChunkSize, base64)
 	MaxMsgsPerTx = 16
 )
 

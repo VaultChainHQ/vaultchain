@@ -128,7 +128,7 @@ chmod +x scripts/*.sh
 # From Windows against WSL, use the printed WSL IP, e.g. http://172.x.x.x:3456/
 ```
 
-Lab flows: register provider, buy personal capacity, upload a file (hash into a manifest, commit it, open a deal, stream the bytes to the provider, stub proof), IBC policy / mint voucher. The lab has no CORS and refuses cross-origin POSTs: use the UI it serves.
+Lab flows: register provider, buy personal capacity, upload a file (hash into a manifest, commit it, open a deal, stream the bytes to the provider; the provider then proves it holds them), IBC policy / mint voucher. The lab has no CORS and refuses cross-origin POSTs: use the UI it serves.
 
 ## Objects and the provider API
 
@@ -158,3 +158,16 @@ Reads are open to anyone who knows the root; access-grant enforcement on retriev
 Chain REST additions: `GET /vaultchain/storage/manifests[/{root}]` and `deals?cid=&provider=&owner=`.
 Run `./scripts/integration-local.sh` for the full CLI flow, or `go test ./tools/vault-provider` for the same flow
 against a real in-process engine.
+
+## Proof of storage
+
+An open deal is audited with Merkle challenges. Every `proof_interval_blocks` (default 10) a new *epoch* starts, seeded with the app hash before that block. For each open deal the chain derives the challenged chunk index from `sha256("vaultchain/challenge/v1" || seed || deal_id)`; `GET /vaultchain/storage/challenge/{deal_id}` returns it (`404` unknown deal, `409` not challengeable yet: the deal must predate the epoch).
+
+The provider answers with `MsgSubmitProof {deal_id, cid, epoch, chunk, proof}`: the chunk bytes plus the Merkle path, verified on chain against the committed root (`pkg/chunk.VerifyProof`). One proof per deal per epoch; a stale epoch or a wrong chunk is rejected. `vault-provider -home <vaultd home> -key provider` does this automatically (poll every `-prove-interval`, default 3 s; each proof pays the tx fee). By hand: `vaultd tx storage submit-proof <deal_id> --provider-url http://127.0.0.1:3333 --from provider`.
+
+End-of-block rules (`x/storage/proof.go`):
+
+- An epoch rollover with no proof for the previous epoch adds one to the deal's `missed_proofs`; a proof resets it. After `max_missed_proofs` (default 3) consecutive misses the deal is `failed`: the escrowed payment is refunded to the owner, 10% of the provider's collateral is slashed to the owner, and the provider's capacity is freed.
+- At `expire_h` a deal with at least one verified proof is `closed` and the escrowed payment is released to the provider; a deal that never proved is `failed` (refund and slash as above).
+
+Breaking changes from the stub: `MsgSubmitProof` no longer has `attestation` (`submit-proof` takes only a deal id), `max_chunk_size` is capped at 512 KiB (`storage.MaxChunkSize`), and the max tx size is raised from 128 KiB to 1 MiB so a proof (one chunk) fits. Limits: the seed is the public app hash (a proposer can grind it), there is no multi-provider replication or provider-accept step, and the proof only shows the provider holds the challenged chunk in that epoch, so assurance grows with the number of epochs, not from a single proof.

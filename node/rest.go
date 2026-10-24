@@ -30,6 +30,7 @@ func (e *Engine) RESTHandler() http.Handler {
 	mux.HandleFunc("/vaultchain/storage/deals/", e.restDeal)
 	mux.HandleFunc("/vaultchain/storage/manifests", e.restManifests)
 	mux.HandleFunc("/vaultchain/storage/manifests/", e.restManifest)
+	mux.HandleFunc("/vaultchain/storage/challenge/", e.restChallenge)
 	mux.HandleFunc("/vaultchain/storage/plans", e.restPlans)
 	mux.HandleFunc("/vaultchain/storage/proofs", e.restProofs)
 	mux.HandleFunc("/vaultchain/access/grants", e.restGrants)
@@ -72,6 +73,14 @@ func cors(next http.Handler) http.Handler {
 
 var errNotFound = errors.New("not found")
 
+// httpError lets a query pick its status code.
+type httpError struct {
+	code int
+	msg  string
+}
+
+func (e httpError) Error() string { return e.msg }
+
 // query runs fn on a consistent read snapshot and writes its result as JSON.
 func (e *Engine) query(w http.ResponseWriter, fn func(s kv.Store) (any, error)) {
 	var out any
@@ -83,6 +92,10 @@ func (e *Engine) query(w http.ResponseWriter, fn func(s kv.Store) (any, error)) 
 	switch {
 	case errors.Is(err, errNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
+	case errors.As(err, new(httpError)):
+		var he httpError
+		errors.As(err, &he)
+		http.Error(w, he.msg, he.code)
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
@@ -259,4 +272,24 @@ func (e *Engine) restTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"tx": rec})
+}
+
+// restChallenge returns the current proof challenge for a deal: 404 if the
+// deal does not exist, 409 while it is not (yet) challengeable.
+func (e *Engine) restChallenge(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(strings.TrimPrefix(r.URL.Path, "/vaultchain/storage/challenge/"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	e.query(w, func(s kv.Store) (any, error) {
+		ch, err := storage.NewKeeper(s).Challenge(id)
+		switch {
+		case errors.Is(err, storage.ErrDealNotFound):
+			return nil, errNotFound
+		case err != nil:
+			return nil, httpError{http.StatusConflict, err.Error()}
+		}
+		return map[string]any{"challenge": ch}, nil
+	})
 }

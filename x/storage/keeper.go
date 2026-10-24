@@ -158,38 +158,3 @@ func (k Keeper) OpenDeal(msg MsgOpenDeal, height int64) error {
 	})
 	return nil
 }
-
-func (k Keeper) SubmitProof(msg MsgSubmitProof, height int64) error {
-	if msg.From == "" || msg.CID == "" || msg.DealID == 0 {
-		return fmt.Errorf("invalid submit proof fields")
-	}
-	deal, ok := k.Deal(msg.DealID)
-	if !ok {
-		return fmt.Errorf("deal %d not found", msg.DealID)
-	}
-	if deal.Status != "open" {
-		return fmt.Errorf("deal not open")
-	}
-	if deal.CID != msg.CID {
-		return fmt.Errorf("cid mismatch")
-	}
-	if deal.Provider != msg.From {
-		return fmt.Errorf("only assigned provider may submit proof")
-	}
-	if msg.Attestation == "" {
-		return fmt.Errorf("attestation required")
-	}
-	deal.LastProvenH = height
-	k.SetDeal(deal)
-
-	id := k.nextID("proof")
-	k.SetProof(Proof{
-		ID:          id,
-		DealID:      msg.DealID,
-		CID:         msg.CID,
-		Provider:    msg.From,
-		Height:      height,
-		Attestation: msg.Attestation,
-	})
-	return nil
-}

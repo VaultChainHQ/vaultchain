@@ -54,8 +54,16 @@ DEAL="$(curl -sf "http://${REST}/vaultchain/storage/deals?cid=${ROOT_HEX}" | pyt
 echo "DEAL_ID=${DEAL}"
 curl -sf -X POST --data-binary "@${FILE}" "http://127.0.0.1${PROV_LISTEN}/v1/objects/${ROOT_HEX}" >/dev/null
 echo "uploaded"
-./build/vaultd tx storage submit-proof "${DEAL}" "${ROOT_HEX}" "stub-${ROOT_HEX}" --from provider --home "${HOME_DIR}" --node "${NODE}"
-sleep 1
+# Wait for the first challenge epoch, then answer it by hand (this provider runs
+# without -home, so it does not prove automatically).
+for _ in $(seq 1 60); do
+  curl -sf "http://${REST}/vaultchain/storage/challenge/${DEAL}" >/dev/null && break
+  sleep 0.5
+done
+curl -sf "http://${REST}/vaultchain/storage/challenge/${DEAL}"; echo
+./build/vaultd tx storage submit-proof "${DEAL}" --provider-url "http://127.0.0.1${PROV_LISTEN}" --from provider --home "${HOME_DIR}" --node "${NODE}"
+sleep 1.5
+curl -sf "http://${REST}/vaultchain/storage/deals?cid=${ROOT_HEX}" | python3 -c "import sys,json; d=json.load(sys.stdin)['deals'][0]; assert d['last_proven_epoch']>0, d; print('proven in epoch', d['last_proven_epoch'])"
 ./build/vaultd tx ibc-lab mint-voucher "${ALICE}" ibc/ATOM 1000000 --from alice --home "${HOME_DIR}" --node "${NODE}"
 sleep 1
 

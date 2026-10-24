@@ -183,4 +183,39 @@ func TestEndToEndAgainstRealChain(t *testing.T) {
 	if c := post(other.Root, []byte("not committed")); c != http.StatusNotFound {
 		t.Fatalf("uncommitted upload: %d", c)
 	}
+
+	// The chain challenges the provider (epoch = 10 blocks) and the provider's
+	// prover answers from its object store: the deal gets a verified proof.
+	fee := sdk.NewCoins(sdk.NewInt64Coin(vtypes.NativeDenom, 10))
+	pr := newProver(srv, "prov", prov.pub, func(b []byte) ([]byte, error) { return prov.priv.Sign(b) }, fee)
+	proved := false
+	for i := 0; i < 30 && !proved; i++ {
+		if err := eng.ProduceBlock(); err != nil {
+			t.Fatal(err)
+		}
+		n, err := pr.tick()
+		if err != nil {
+			t.Fatal(err)
+		}
+		proved = n > 0
+	}
+	if !proved {
+		t.Fatal("prover never found a challenge to answer")
+	}
+	if err := eng.ProduceBlock(); err != nil {
+		t.Fatal(err)
+	}
+	var deals struct {
+		Deals []storage.Deal `json:"deals"`
+	}
+	if code, err := srv.chainGet("/vaultchain/storage/deals?provider="+prov.addr, &deals); err != nil || code != 200 || len(deals.Deals) != 1 {
+		t.Fatalf("deals: %d %v %+v", code, err, deals)
+	}
+	if d := deals.Deals[0]; d.LastProvenEpoch == 0 || d.MissedProofs != 0 || d.Status != "open" {
+		t.Fatalf("deal not proven: %+v", d)
+	}
+	// Once proven, the same epoch is not answered twice.
+	if n, err := pr.tick(); err != nil || n != 0 {
+		t.Fatalf("second tick: n=%d err=%v", n, err)
+	}
 }

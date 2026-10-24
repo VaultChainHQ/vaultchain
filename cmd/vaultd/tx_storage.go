@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -120,23 +122,54 @@ func cmdTxOpenDeal() *cobra.Command {
 }
 
 func cmdTxSubmitProof() *cobra.Command {
-	return &cobra.Command{
-		Use:   "submit-proof [deal_id] [cid] [attestation]",
-		Short: "Submit storage proof stub",
-		Args:  cobra.ExactArgs(3),
+	var providerURL string
+	cmd := &cobra.Command{
+		Use:   "submit-proof [deal_id]",
+		Short: "Answer the deal's current chunk challenge (fetches the chunk and Merkle path from the provider)",
+		Long: `Reads the deal's current challenge from the chain, downloads the challenged
+chunk and its Merkle path from --provider-url (GET /v1/chunks/{root}/{i}) and
+submits them as a signed proof. Normally vault-provider does this itself
+(-home/-key); this command is for manual use and debugging.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dealID, err := strconv.ParseUint(args[0], 10, 64)
 			if err != nil {
 				return err
 			}
+			if providerURL == "" {
+				return fmt.Errorf("--provider-url required")
+			}
+			var res struct {
+				Challenge storage.Challenge `json:"challenge"`
+			}
+			if err := httpGetJSON(fmt.Sprintf("%s/vaultchain/storage/challenge/%d", restBase(cmd), dealID), &res); err != nil {
+				return err
+			}
+			ch := res.Challenge
+			resp, err := http.Get(fmt.Sprintf("%s/v1/chunks/%s/%d", strings.TrimRight(providerURL, "/"), ch.Root, ch.Index))
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			data, err := io.ReadAll(io.LimitReader(resp.Body, storage.MaxChunkSize+1))
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("provider returned HTTP %d for chunk %d", resp.StatusCode, ch.Index)
+			}
+			var path []string
+			if h := resp.Header.Get("X-Vault-Proof"); h != "" {
+				path = strings.Split(h, ",")
+			}
 			return postTx(cmd, storage.MsgSubmitProof{
-				Type:        storage.MsgTypeSubmitProof,
-				DealID:      dealID,
-				CID:         args[1],
-				Attestation: args[2],
+				Type: storage.MsgTypeSubmitProof, DealID: dealID, CID: ch.Root,
+				Epoch: ch.Epoch, Chunk: data, Proof: path,
 			})
 		},
 	}
+	cmd.Flags().StringVar(&providerURL, "provider-url", "", "provider base URL, e.g. http://127.0.0.1:3333")
+	return cmd
 }
 
 func cmdTxGrantAccess() *cobra.Command {

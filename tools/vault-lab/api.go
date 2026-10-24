@@ -303,29 +303,26 @@ func (l *Lab) handleOpenDeal(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "raw": out, "deal": body})
 }
+
+// handleSubmitProof answers the deal's current challenge by hand (the provider
+// normally does this itself): the CLI fetches the challenge and the chunk.
 func (l *Lab) handleSubmitProof(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, 405, fmt.Errorf("POST required"))
 		return
 	}
 	dealID := r.URL.Query().Get("deal_id")
-	cid := r.URL.Query().Get("cid")
-	att := r.URL.Query().Get("attestation")
-	if dealID == "" || cid == "" {
-		writeErr(w, 400, fmt.Errorf("deal_id and cid required"))
+	if dealID == "" {
+		writeErr(w, 400, fmt.Errorf("deal_id required"))
 		return
 	}
-	if att == "" {
-		att = "stub-proof-" + time.Now().UTC().Format(time.RFC3339)
-	}
-	out, err := l.runTx(l.ProviderKey, "storage", "submit-proof", dealID, cid, att)
+	out, err := l.runTx(l.ProviderKey, "storage", "submit-proof", dealID, "--provider-url", l.Provider)
 	if err != nil {
 		writeErr(w, 500, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "raw": out})
 }
-
 func (l *Lab) handleGrantAccess(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, 405, fmt.Errorf("POST required"))
@@ -554,7 +551,7 @@ func (l *Lab) openDealFor(root, owner, provider string) (uint64, bool, error) {
 }
 
 // handleUpload runs the whole object flow: hash into a manifest, commit it,
-// open a deal, stream the bytes to the provider, then post the (stub) proof.
+// open a deal, stream the bytes to the provider, then leave proving to the provider (it answers chain challenges).
 func (l *Lab) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, 405, fmt.Errorf("POST required"))
@@ -688,15 +685,6 @@ func (l *Lab) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Proof stub (replaced by chunk challenges in M6).
-	proofOut, err := l.runTx(l.ProviderKey, "storage", "submit-proof",
-		strconv.FormatUint(dealID, 10), m.Root, "lab-stub-"+m.Root[:8],
-	)
-	if err != nil {
-		writeErr(w, 500, fmt.Errorf("proof: %w", err))
-		return
-	}
-
 	writeJSON(w, 200, map[string]any{
 		"ok":        true,
 		"root":      m.Root,
@@ -709,7 +697,6 @@ func (l *Lab) handleUpload(w http.ResponseWriter, r *http.Request) {
 		"class":     class,
 		"commit_tx": commitOut,
 		"open_tx":   dealOut,
-		"proof":     proofOut,
 		"download":  "/api/provider/download/" + m.Root,
 	})
 }

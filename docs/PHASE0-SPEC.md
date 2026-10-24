@@ -135,4 +135,6 @@ Inspired by public designs of Jackal (deals/proofs), Filecoin (proving), Arweave
 - [x] `vault-local-1` boots locally  
 - [x] Register provider; open Personal plan + Market deal  
 - [x] Upload encrypted blob to provider; stub proof accepted  
-- [x] IBC payment policy documented and enforced via denom whitelist in storage params  
+- [x] IBC payment policy documented and enforced via denom whitelist in storage params
+
+> **Update (M6):** the v1 stub attestation described above was replaced by Merkle chunk challenges with missed-proof tracking, failure/slashing and expiry payout. See README "Proof of storage".

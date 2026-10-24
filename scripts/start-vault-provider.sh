@@ -41,4 +41,5 @@ exec "${ROOT}/build/vault-provider" \
   -listen "${LISTEN}" \
   -data "${DATA}" \
   -rest "${REST}" \
-  -chain-id vault-local-1
+  -chain-id vault-local-1 \
+  -home "${HOME_DIR}" -key provider   # answers the chain's storage challenges
