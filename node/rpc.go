@@ -58,7 +58,7 @@ func (e *Engine) handleStatus(w http.ResponseWriter, r *http.Request) {
 				"catching_up":         false,
 			},
 			"validator_info": map[string]any{
-				"address": "local-validator",
+				"address":      "local-validator",
 				"voting_power": "1",
 			},
 		},
@@ -93,9 +93,9 @@ func (e *Engine) handleBroadcast(w http.ResponseWriter, r *http.Request) {
 		"jsonrpc": "2.0",
 		"id":      -1,
 		"result": map[string]any{
-			"hash":   hash,
-			"code":   0,
-			"log":    "tx queued",
+			"hash": hash,
+			"code": 0,
+			"log":  "tx queued",
 		},
 	})
 }

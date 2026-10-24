@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	ModuleName              = "ibc"
-	MsgTypeSimulateDeposit  = "ibc/SimulateIBCDeposit"
-	PolicyPath              = "/vaultchain/ibc/policy"
+	ModuleName             = "ibc"
+	MsgTypeSimulateDeposit = "ibc/SimulateIBCDeposit"
+	PolicyPath             = "/vaultchain/ibc/policy"
 )
 
 // Policy documents ICS-20 payments-only stance.
@@ -45,7 +45,7 @@ func DefaultPolicy() Policy {
 
 type MsgSimulateIBCDeposit struct {
 	Type   string `json:"type"`
-	From   string `json:"from"` // signer / lab operator
+	From   string `json:"-"` // signer / lab operator
 	To     string `json:"to"`
 	Denom  string `json:"denom"` // e.g. ibc/ATOM
 	Amount int64  `json:"amount"`

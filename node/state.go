@@ -35,11 +35,11 @@ type Genesis struct {
 }
 
 type BlockHeader struct {
-	Height    int64     `json:"height"`
-	Time      time.Time `json:"time"`
-	TxCount   int       `json:"tx_count"`
-	AppHash   string    `json:"app_hash"`
-	ChainID   string    `json:"chain_id"`
+	Height  int64     `json:"height"`
+	Time    time.Time `json:"time"`
+	TxCount int       `json:"tx_count"`
+	AppHash string    `json:"app_hash"`
+	ChainID string    `json:"chain_id"`
 }
 
 type TxRecord struct {
@@ -50,19 +50,21 @@ type TxRecord struct {
 }
 
 type ChainState struct {
-	Height   int64           `json:"height"`
-	ChainID  string          `json:"chain_id"`
-	Bank     *bank.State     `json:"bank"`
-	Storage  *storage.State  `json:"storage"`
-	Access   *access.State   `json:"access"`
-	Blocks   []BlockHeader   `json:"blocks"`
-	Txs      []TxRecord      `json:"txs"`
+	Height  int64          `json:"height"`
+	ChainID string         `json:"chain_id"`
+	Bank    *bank.State    `json:"bank"`
+	Storage *storage.State `json:"storage"`
+	Access  *access.State  `json:"access"`
+	Blocks  []BlockHeader  `json:"blocks"`
+	Txs     []TxRecord     `json:"txs"`
+	// Accounts holds the next expected nonce per signer address.
+	Accounts map[string]uint64 `json:"accounts"`
 }
 
 type Store struct {
-	mu   sync.RWMutex
-	db   *bolt.DB
-	path string
+	mu    sync.RWMutex
+	db    *bolt.DB
+	path  string
 	State *ChainState
 }
 
@@ -103,12 +105,13 @@ func (s *Store) load() error {
 		b := tx.Bucket(bucketState).Get(keyChain)
 		if b == nil {
 			s.State = &ChainState{
-				Height:  0,
-				Bank:    bank.NewState(),
-				Storage: storage.NewState(),
-				Access:  access.NewState(),
-				Blocks:  nil,
-				Txs:     nil,
+				Height:   0,
+				Bank:     bank.NewState(),
+				Storage:  storage.NewState(),
+				Access:   access.NewState(),
+				Blocks:   nil,
+				Txs:      nil,
+				Accounts: map[string]uint64{},
 			}
 			return nil
 		}
@@ -124,6 +127,9 @@ func (s *Store) load() error {
 		}
 		if st.Access == nil {
 			st.Access = access.NewState()
+		}
+		if st.Accounts == nil {
+			st.Accounts = map[string]uint64{}
 		}
 		if st.Bank.Balances == nil {
 			st.Bank.Balances = map[string]sdk.Coins{}

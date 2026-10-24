@@ -42,12 +42,12 @@ func (p Params) IsPaymentDenomAllowed(denom string) bool {
 }
 
 type Provider struct {
-	Address    string `json:"address"`
-	Endpoint   string `json:"endpoint"`
-	Capacity   uint64 `json:"capacity"`
-	FreeBytes  uint64 `json:"free_bytes"`
+	Address    string   `json:"address"`
+	Endpoint   string   `json:"endpoint"`
+	Capacity   uint64   `json:"capacity"`
+	FreeBytes  uint64   `json:"free_bytes"`
 	Collateral sdk.Coin `json:"collateral"`
-	Status     string `json:"status"` // active | shutdown
+	Status     string   `json:"status"` // active | shutdown
 }
 
 type CapacityPlan struct {
@@ -86,25 +86,41 @@ type Proof struct {
 }
 
 type State struct {
-	Params         Params                  `json:"params"`
-	Providers      map[string]Provider     `json:"providers"`
-	Plans          map[uint64]CapacityPlan `json:"plans"`
-	Deals          map[uint64]Deal         `json:"deals"`
-	Proofs         map[uint64]Proof        `json:"proofs"`
-	NextPlanID     uint64                  `json:"next_plan_id"`
-	NextDealID     uint64                  `json:"next_deal_id"`
-	NextProofID    uint64                  `json:"next_proof_id"`
+	Params      Params                  `json:"params"`
+	Providers   map[string]Provider     `json:"providers"`
+	Plans       map[uint64]CapacityPlan `json:"plans"`
+	Deals       map[uint64]Deal         `json:"deals"`
+	Proofs      map[uint64]Proof        `json:"proofs"`
+	NextPlanID  uint64                  `json:"next_plan_id"`
+	NextDealID  uint64                  `json:"next_deal_id"`
+	NextProofID uint64                  `json:"next_proof_id"`
 }
 
 func NewState() *State {
 	return &State{
-		Params:     DefaultParams(),
-		Providers:  make(map[string]Provider),
-		Plans:      make(map[uint64]CapacityPlan),
-		Deals:      make(map[uint64]Deal),
-		Proofs:     make(map[uint64]Proof),
-		NextPlanID: 1,
-		NextDealID: 1,
+		Params:      DefaultParams(),
+		Providers:   make(map[string]Provider),
+		Plans:       make(map[uint64]CapacityPlan),
+		Deals:       make(map[uint64]Deal),
+		Proofs:      make(map[uint64]Proof),
+		NextPlanID:  1,
+		NextDealID:  1,
 		NextProofID: 1,
 	}
+}
+
+// OwnerOfCID returns the owner of the earliest deal for cid. The earliest deal
+// is chosen by lowest deal id so the result is deterministic.
+func (s *State) OwnerOfCID(cid string) (string, bool) {
+	var best *Deal
+	for _, d := range s.Deals {
+		d := d
+		if d.CID == cid && (best == nil || d.ID < best.ID) {
+			best = &d
+		}
+	}
+	if best == nil {
+		return "", false
+	}
+	return best.Owner, true
 }

@@ -6,10 +6,10 @@ import (
 )
 
 const (
-	ModuleName          = "access"
-	MsgTypeGrantAccess  = "access/GrantAccess"
-	CapabilityRead      = "read"
-	CapabilityWrite     = "write"
+	ModuleName         = "access"
+	MsgTypeGrantAccess = "access/GrantAccess"
+	CapabilityRead     = "read"
+	CapabilityWrite    = "write"
 )
 
 type AccessGrant struct {
@@ -22,8 +22,8 @@ type AccessGrant struct {
 }
 
 type State struct {
-	Grants     map[uint64]AccessGrant `json:"grants"`
-	NextGrantID uint64                `json:"next_grant_id"`
+	Grants      map[uint64]AccessGrant `json:"grants"`
+	NextGrantID uint64                 `json:"next_grant_id"`
 }
 
 func NewState() *State {
@@ -35,14 +35,18 @@ func NewState() *State {
 
 type MsgGrantAccess struct {
 	Type       string `json:"type"`
-	From       string `json:"from"`
+	From       string `json:"-"`
 	CID        string `json:"cid"`
 	Grantee    string `json:"grantee"`
 	Capability string `json:"capability"`
 	ExpiryH    int64  `json:"expiry_height"`
 }
 
-func (s *State) Grant(msg MsgGrantAccess, height int64) error {
+// OwnerResolver reports who owns a CID (e.g. the owner of its deal/manifest).
+type OwnerResolver func(cid string) (owner string, ok bool)
+
+// Grant records an access grant. Only the owner of the CID may grant access to it.
+func (s *State) Grant(msg MsgGrantAccess, height int64, ownerOf OwnerResolver) error {
 	if msg.From == "" || msg.CID == "" || msg.Grantee == "" {
 		return fmt.Errorf("invalid grant access fields")
 	}
@@ -51,6 +55,13 @@ func (s *State) Grant(msg MsgGrantAccess, height int64) error {
 	}
 	if msg.ExpiryH > 0 && msg.ExpiryH <= height {
 		return fmt.Errorf("expiry must be in the future")
+	}
+	owner, ok := ownerOf(msg.CID)
+	if !ok {
+		return fmt.Errorf("cid %s has no owner (no deal/manifest)", msg.CID)
+	}
+	if owner != msg.From {
+		return fmt.Errorf("only the owner of cid %s may grant access", msg.CID)
 	}
 	id := s.NextGrantID
 	s.NextGrantID++

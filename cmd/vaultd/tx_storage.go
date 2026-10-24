@@ -38,10 +38,6 @@ func cmdTxRegisterProvider() *cobra.Command {
 		Short: "Register as a storage provider",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			from, err := fromAddress(cmd)
-			if err != nil {
-				return err
-			}
 			cap, err := strconv.ParseUint(args[1], 10, 64)
 			if err != nil {
 				return err
@@ -52,7 +48,6 @@ func cmdTxRegisterProvider() *cobra.Command {
 			}
 			return postTx(cmd, storage.MsgRegisterProvider{
 				Type:       storage.MsgTypeRegisterProvider,
-				From:       from,
 				Endpoint:   args[0],
 				Capacity:   cap,
 				Collateral: collateral,
@@ -67,10 +62,6 @@ func cmdTxBuyCapacity() *cobra.Command {
 		Short: "Buy personal capacity plan",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			from, err := fromAddress(cmd)
-			if err != nil {
-				return err
-			}
 			bytesN, err := strconv.ParseUint(args[0], 10, 64)
 			if err != nil {
 				return err
@@ -81,7 +72,6 @@ func cmdTxBuyCapacity() *cobra.Command {
 			}
 			return postTx(cmd, storage.MsgBuyCapacity{
 				Type:     storage.MsgTypeBuyCapacity,
-				From:     from,
 				Bytes:    bytesN,
 				Duration: dur,
 				Denom:    args[2],
@@ -97,10 +87,6 @@ func cmdTxOpenDeal() *cobra.Command {
 		Short: "Open market or archive deal",
 		Args:  cobra.ExactArgs(6),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			from, err := fromAddress(cmd)
-			if err != nil {
-				return err
-			}
 			size, err := strconv.ParseUint(args[2], 10, 64)
 			if err != nil {
 				return err
@@ -111,7 +97,6 @@ func cmdTxOpenDeal() *cobra.Command {
 			}
 			return postTx(cmd, storage.MsgOpenDeal{
 				Type:        storage.MsgTypeOpenDeal,
-				From:        from,
 				Class:       args[0],
 				CID:         args[1],
 				Size:        size,
@@ -132,17 +117,12 @@ func cmdTxSubmitProof() *cobra.Command {
 		Short: "Submit storage proof stub",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			from, err := fromAddress(cmd)
-			if err != nil {
-				return err
-			}
 			dealID, err := strconv.ParseUint(args[0], 10, 64)
 			if err != nil {
 				return err
 			}
 			return postTx(cmd, storage.MsgSubmitProof{
 				Type:        storage.MsgTypeSubmitProof,
-				From:        from,
 				DealID:      dealID,
 				CID:         args[1],
 				Attestation: args[2],
@@ -157,17 +137,12 @@ func cmdTxGrantAccess() *cobra.Command {
 		Short: "Grant access to a CID",
 		Args:  cobra.ExactArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			from, err := fromAddress(cmd)
-			if err != nil {
-				return err
-			}
 			exp, err := strconv.ParseInt(args[3], 10, 64)
 			if err != nil {
 				return err
 			}
 			return postTx(cmd, access.MsgGrantAccess{
 				Type:       access.MsgTypeGrantAccess,
-				From:       from,
 				CID:        args[0],
 				Grantee:    args[1],
 				Capability: args[2],

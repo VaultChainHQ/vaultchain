@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	vtypes "github.com/vaultchain/vaultchain/types"
 	"github.com/vaultchain/vaultchain/x/ibc"
 )
 
@@ -25,6 +26,7 @@ func (e *Engine) serveREST(ctx context.Context) error {
 	mux.HandleFunc("/vaultchain/storage/proofs", e.restProofs)
 	mux.HandleFunc("/vaultchain/access/grants", e.restGrants)
 	mux.HandleFunc(ibc.PolicyPath, e.restIBCPolicy)
+	mux.HandleFunc("/vaultchain/auth/accounts/", e.restAccount)
 	mux.HandleFunc("/vaultchain/txs", e.restSubmitTx)
 
 	srv := &http.Server{Addr: e.cfg.RESTAddr, Handler: cors(mux), ReadHeaderTimeout: 5 * time.Second}
@@ -65,9 +67,9 @@ func (e *Engine) restNodeInfo(w http.ResponseWriter, r *http.Request) {
 			"version": "0.1.0",
 		},
 		"application_version": map[string]any{
-			"name":    "vaultchain",
+			"name":     "vaultchain",
 			"app_name": "vaultd",
-			"version": "0.1.0",
+			"version":  "0.1.0",
 		},
 	})
 }
@@ -196,4 +198,14 @@ func (e *Engine) restSubmitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"hash": hash, "status": "queued"})
+}
+
+func (e *Engine) restAccount(w http.ResponseWriter, r *http.Request) {
+	addr := strings.Trim(strings.TrimPrefix(r.URL.Path, "/vaultchain/auth/accounts/"), "/")
+	if err := vtypes.ValidateAddress(addr); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	nonce, pending := e.AccountNonces(addr)
+	writeJSON(w, map[string]any{"address": addr, "nonce": nonce, "pending_nonce": pending})
 }

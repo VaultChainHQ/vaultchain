@@ -16,7 +16,7 @@ const (
 
 type MsgRegisterProvider struct {
 	Type       string   `json:"type"`
-	From       string   `json:"from"`
+	From       string   `json:"-"`
 	Endpoint   string   `json:"endpoint"`
 	Capacity   uint64   `json:"capacity"`
 	Collateral sdk.Coin `json:"collateral"`
@@ -24,7 +24,7 @@ type MsgRegisterProvider struct {
 
 type MsgBuyCapacity struct {
 	Type     string `json:"type"`
-	From     string `json:"from"`
+	From     string `json:"-"`
 	Bytes    uint64 `json:"bytes"`
 	Duration int64  `json:"duration_blocks"`
 	Denom    string `json:"denom"`
@@ -32,7 +32,7 @@ type MsgBuyCapacity struct {
 
 type MsgOpenDeal struct {
 	Type        string `json:"type"`
-	From        string `json:"from"`
+	From        string `json:"-"`
 	Class       string `json:"class"` // market | archive
 	CID         string `json:"cid"`
 	Size        uint64 `json:"size"`
@@ -44,7 +44,7 @@ type MsgOpenDeal struct {
 
 type MsgSubmitProof struct {
 	Type        string `json:"type"`
-	From        string `json:"from"`
+	From        string `json:"-"`
 	DealID      uint64 `json:"deal_id"`
 	CID         string `json:"cid"`
 	Attestation string `json:"attestation"`

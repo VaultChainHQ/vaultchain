@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/go-bip39"
 )
 
@@ -21,8 +20,8 @@ type KeyRecord struct {
 }
 
 type Keyring struct {
-	dir   string
-	keys  map[string]KeyRecord
+	dir  string
+	keys map[string]KeyRecord
 }
 
 func NewKeyring(home string) (*Keyring, error) {
@@ -83,10 +82,13 @@ func (k *Keyring) Add(name string) (KeyRecord, error) {
 	}
 	seed := bip39.NewSeed(mnemonic, "")
 	priv := secp256k1.GenPrivKeyFromSecret(seed[:32])
-	addr := sdk.AccAddress(priv.PubKey().Address())
+	addr, err := AddressFromPubKey(priv.PubKey().Bytes())
+	if err != nil {
+		return KeyRecord{}, err
+	}
 	rec := KeyRecord{
 		Name:       name,
-		Address:    addr.String(),
+		Address:    addr,
 		PubKeyHex:  hex.EncodeToString(priv.PubKey().Bytes()),
 		PrivKeyHex: hex.EncodeToString(priv.Bytes()),
 		Mnemonic:   mnemonic,
