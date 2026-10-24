@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,22 +90,26 @@ func main() {
 		log.Printf("WSL tip: open http://%s%s from Windows", ip, *listen)
 	}
 	log.Printf("  home=%s chain=%s key=%s provider=%s", *home, *chainID, *key, *provider)
-	log.Fatal(http.Serve(ln, withCORS(mux)))
+	log.Fatal(http.Serve(ln, sameOriginOnly(mux)))
 }
 
-func withCORS(next http.Handler) http.Handler {
+// sameOriginOnly rejects cross-origin state-changing requests. The lab signs
+// transactions with local keys, so it must not be drivable from arbitrary web
+// pages (and it sends no CORS headers).
+func sameOriginOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			if o := r.Header.Get("Origin"); o != "" {
+				u, err := url.Parse(o)
+				if err != nil || u.Host != r.Host {
+					http.Error(w, "cross-origin request refused", http.StatusForbidden)
+					return
+				}
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
 }
-
 func wslHint() string {
 	out, err := exec.Command("hostname", "-I").Output()
 	if err != nil {

@@ -40,26 +40,35 @@ sleep 1
 ./build/vaultd tx storage buy-capacity "$((1<<30))" 10000 uvault --from alice --home "${HOME_DIR}" --node "${NODE}"
 sleep 1
 
-BLOB="vaultenc:v1:hello-vaultchain"
-CID="$(printf %s "${BLOB}" | sha256sum | awk '{print $1}')"
-SIZE="${#BLOB}"
-./build/vaultd tx storage open-deal market "${CID}" "${SIZE}" "${PROV}" 10000 uvault --from alice --home "${HOME_DIR}" --node "${NODE}"
-sleep 1
+# A real multi-chunk file (600 KB => 3 chunks at 256 KiB).
+FILE=/tmp/vault-int-file.bin
+head -c 600000 /dev/urandom >"${FILE}"
+ROOT_HEX="$(./build/vaultd tx storage commit-manifest "${FILE}" --mime application/octet-stream --name int.bin --dry-run | python3 -c "import sys,json; print(json.load(sys.stdin)['root'])")"
+SIZE="$(stat -c %s "${FILE}")"
+echo "ROOT=${ROOT_HEX} SIZE=${SIZE}"
+./build/vaultd tx storage commit-manifest "${FILE}" --mime application/octet-stream --name int.bin --from alice --home "${HOME_DIR}" --node "${NODE}"
+./build/vaultd tx storage open-deal market "${ROOT_HEX}" 0 "${PROV}" 10000 uvault --from alice --home "${HOME_DIR}" --node "${NODE}"
+sleep 1.5
 
-DEAL="$(curl -sf "http://${REST}/vaultchain/storage/deals" | python3 -c "import sys,json; d=json.load(sys.stdin); print([x['id'] for x in d['deals'] if x['cid']=='${CID}'][0])")"
-echo "DEAL_ID=${DEAL} CID=${CID}"
-printf %s "${BLOB}" >/tmp/vault-blob.bin
-curl -sf -X POST "http://127.0.0.1${PROV_LISTEN}/v1/upload" \
-  -F "owner=${ALICE}" -F "cid=${CID}" -F "deal_id=${DEAL}" -F "file=@/tmp/vault-blob.bin;filename=blob"
-echo
-./build/vaultd tx storage submit-proof "${DEAL}" "${CID}" "stub-${CID}" --from provider --home "${HOME_DIR}" --node "${NODE}"
+DEAL="$(curl -sf "http://${REST}/vaultchain/storage/deals?cid=${ROOT_HEX}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['deals'][0]['id'])")"
+echo "DEAL_ID=${DEAL}"
+curl -sf -X POST --data-binary "@${FILE}" "http://127.0.0.1${PROV_LISTEN}/v1/objects/${ROOT_HEX}" >/dev/null
+echo "uploaded"
+./build/vaultd tx storage submit-proof "${DEAL}" "${ROOT_HEX}" "stub-${ROOT_HEX}" --from provider --home "${HOME_DIR}" --node "${NODE}"
 sleep 1
 ./build/vaultd tx ibc-lab mint-voucher "${ALICE}" ibc/ATOM 1000000 --from alice --home "${HOME_DIR}" --node "${NODE}"
 sleep 1
 
+echo "=== manifests ==="; curl -sf "http://${REST}/vaultchain/storage/manifests"; echo
 echo "=== deals ==="; curl -sf "http://${REST}/vaultchain/storage/deals"; echo
 echo "=== proofs ==="; curl -sf "http://${REST}/vaultchain/storage/proofs"; echo
 echo "=== plans ==="; curl -sf "http://${REST}/vaultchain/storage/plans"; echo
 echo "=== balances alice ==="; curl -sf "http://${REST}/cosmos/bank/v1beta1/balances/${ALICE}"; echo
-echo "=== download ==="; curl -sf "http://127.0.0.1${PROV_LISTEN}/v1/download/${CID}"; echo
+
+echo "=== download (full) ==="
+curl -sf "http://127.0.0.1${PROV_LISTEN}/v1/objects/${ROOT_HEX}" -o /tmp/vault-int-got.bin
+cmp "${FILE}" /tmp/vault-int-got.bin
+echo "=== download (range 262000-263000, crosses a chunk boundary) ==="
+curl -sf -H "Range: bytes=262000-263000" "http://127.0.0.1${PROV_LISTEN}/v1/objects/${ROOT_HEX}" -o /tmp/vault-int-range.bin
+tail -c +262001 "${FILE}" | head -c 1001 | cmp - /tmp/vault-int-range.bin
 echo INT_OK

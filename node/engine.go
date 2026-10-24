@@ -170,6 +170,10 @@ func (e *Engine) Run(ctx context.Context) error {
 
 // produceBlock drains the mempool into one block. The wall clock is read here,
 // once, as block input; the state machine itself never reads it.
+// ProduceBlock seals the current mempool into one block (the Run loop does
+// this on a timer; exported so integration tests can drive the chain).
+func (e *Engine) ProduceBlock() error { return e.produceBlock() }
+
 func (e *Engine) produceBlock() error {
 	e.mpMu.Lock()
 	defer e.mpMu.Unlock()

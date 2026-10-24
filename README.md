@@ -70,7 +70,9 @@ vaultd query ibc-policy
 # Register provider + personal plan + market deal
 vaultd tx storage register-provider http://127.0.0.1:8080 1099511627776 1000000uvault --from alice --home ~/.vaultchain
 vaultd tx storage buy-capacity 1073741824 10000 uvault --from alice --home ~/.vaultchain
-vaultd tx storage open-deal market bafyExample 1048576 <provider-addr> 5000 uvault --from alice --home ~/.vaultchain
+# Objects are content-addressed: commit a manifest for a file first, then open a deal on its root
+vaultd tx storage commit-manifest ./photo.jpg --from alice --home ~/.vaultchain    # prints the tx; `--dry-run` shows the root
+vaultd tx storage open-deal market <root> 0 <provider-addr> 5000 uvault --from alice --home ~/.vaultchain   # size 0 = manifest size
 
 # Lab-only fake IBC voucher (requires the chain to be initialised with `--lab-mode`)
 vaultd tx ibc-lab mint-voucher $(vaultd keys show alice --home ~/.vaultchain) ibc/ATOM 1000000 --from alice --home ~/.vaultchain
@@ -98,12 +100,13 @@ node, delete `<home>/data`, and re-run `vaultd init` (`scripts/init-vault-local.
 cmd/vaultd/            CLI + daemon entry
 node/                  local engine (blocks, mempool, RPC, REST) + deterministic App state machine
 kv/                    per-key state store (bbolt + in-memory), branch cache, app hash
-x/storage/             providers, capacity, deals, proofs, denom whitelist
+x/storage/             providers, capacity, manifests, deals, proofs, denom whitelist
 x/access/              AccessGrant store
 x/bank/                balances + escrow
 x/ibc/                 payments-only policy + lab voucher mint
 crypto/                test keyring (secp256k1)
-tools/vault-provider/  native object store (upload/download by CID)
+pkg/chunk/             chunking, Merkle tree, content root, inclusion proofs
+tools/vault-provider/  object store: verified chunked storage, Range reads, deal-gated writes
 tools/vault-lab/       click-to-test lab UI (:3456)
 docs/                  Phase 0 + IBC policy
 scripts/               init + start helpers
@@ -125,4 +128,33 @@ chmod +x scripts/*.sh
 # From Windows against WSL, use the printed WSL IP, e.g. http://172.x.x.x:3456/
 ```
 
-Lab flows: register provider → buy personal capacity → deal+upload encrypted blob → stub proof → IBC policy / mint voucher.
+Lab flows: register provider, buy personal capacity, upload a file (hash into a manifest, commit it, open a deal, stream the bytes to the provider, stub proof), IBC policy / mint voucher. The lab has no CORS and refuses cross-origin POSTs: use the UI it serves.
+
+## Objects and the provider API
+
+An object is a file split into chunks (256 KiB by default, `pkg/chunk`). Its **root** commits to the Merkle tree of
+chunk hashes plus size and chunk size, so the root alone pins the exact bytes.
+
+1. `commit-manifest` publishes `{root, size, chunk_size, mime, name}` on chain. The first committer owns the root
+   (note: anyone holding the file can commit it first, so ownership is not proof of authorship).
+2. `open-deal` takes that root (size 0 = manifest size) and only the manifest owner may open it.
+3. The provider accepts bytes only for a root that has an open deal naming that provider (`-address` is required;
+   the old `-skip-chain-check` is gone) and re-verifies the whole object against the root before keeping it.
+
+| Provider route | Purpose |
+|----------------|---------|
+| `POST\|PUT /v1/objects/{root}` | stream a whole object (verified, then installed atomically) |
+| `GET\|HEAD /v1/objects/{root}` | download, supports `Range`; each chunk is re-hashed before it is served |
+| `GET /v1/objects/{root}/status` | stored / complete |
+| `PUT /v1/chunks/{root}/{i}` | upload one chunk with its Merkle proof in `X-Vault-Proof` |
+| `GET\|HEAD /v1/chunks/{root}/{i}` | one chunk (+ `X-Vault-Proof` once the object is complete) |
+| `/status`, `/version` | node info |
+
+Responses use the manifest's Content-Type with `nosniff` and a locked-down CSP, and are `attachment` unless the type
+is a safe inline media type. CORS is off unless you pass `-allow-origin https://app.example` (repeatable; `*` is
+ignored). **Removed:** `/list`, `/upload`, `/v1/upload`, `/download` (no listing; use `GET /vaultchain/storage/manifests`).
+Reads are open to anyone who knows the root; access-grant enforcement on retrieval is not implemented.
+
+Chain REST additions: `GET /vaultchain/storage/manifests[/{root}]` and `deals?cid=&provider=&owner=`.
+Run `./scripts/integration-local.sh` for the full CLI flow, or `go test ./tools/vault-provider` for the same flow
+against a real in-process engine.

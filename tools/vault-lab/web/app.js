@@ -30,14 +30,16 @@ function renderProviderFiles(data) {
   const files = data?.data?.files || data?.files || [];
   providerFiles.innerHTML = "";
   if (!files.length) {
-    providerFiles.textContent = "No objects on provider yet.";
+    providerFiles.textContent = "No committed objects yet.";
     return;
   }
-  for (const cid of files) {
+  for (const f of files) {
+    const root = typeof f === "string" ? f : f.root;
+    const label = typeof f === "string" ? f : ` [${f.mime}, ${f.size} B] ${root.slice(0, 12)}...`;
     const a = document.createElement("a");
-    a.href = `/api/provider/download/${cid}`;
-    a.textContent = cid;
-    a.download = cid;
+    a.href = `/api/provider/download/${root}`;
+    a.textContent = label;
+    a.download = (typeof f === "string" ? root : f.name) || root;
     providerFiles.appendChild(a);
   }
 }

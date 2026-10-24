@@ -112,7 +112,7 @@ func postTx(cmd *cobra.Command, msgs ...any) error {
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
 	}
-	cmd.Println(string(b))
+	fmt.Fprintln(cmd.OutOrStdout(), string(b))
 	return nil
 }
 
