@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vaultchain/vaultchain/kv"
+	"github.com/vaultchain/vaultchain/pkg/chunk"
 	"github.com/vaultchain/vaultchain/x/access"
 	"github.com/vaultchain/vaultchain/x/bank"
 	"github.com/vaultchain/vaultchain/x/ibc"
@@ -14,6 +15,18 @@ import (
 )
 
 const testChain = "c-1"
+
+// manifestFor builds a chain manifest message for data (4 KiB chunks).
+func manifestFor(t *testing.T, data []byte, mime, name string) storage.MsgCommitManifest {
+	t.Helper()
+	m, _, err := chunk.BuildBytes(data, storage.MinChunkSize, mime, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return storage.MsgCommitManifest{Type: storage.MsgTypeCommitManifest, Root: m.Root, Size: m.Size, ChunkSize: m.ChunkSize, Mime: m.Mime, Name: m.Name}
+}
+
+var objA = []byte("hello vaultchain")
 
 var (
 	genesisTime = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -68,18 +81,20 @@ func TestExecuteBlockDeterministicReplay(t *testing.T) {
 	g := testGenesis(false, alice, bob, prov)
 
 	// One fixed set of signed txs, replayed onto independent apps.
+	man := manifestFor(t, objA, "text/plain", "a.txt")
 	b1 := [][]byte{
 		alice.tx(t, testChain, 0, uv(10), MsgBankSend{Type: MsgTypeBankSend, To: bob.addr, Amount: uv(500)}),
+		alice.tx(t, testChain, 1, uv(10), man),
 		prov.tx(t, testChain, 0, uv(10), storage.MsgRegisterProvider{
 			Type: storage.MsgTypeRegisterProvider, Endpoint: "http://p", Capacity: 1 << 30, Collateral: uv(1000)[0]}),
 		bob.tx(t, testChain, 0, uv(10), MsgBankSend{Type: MsgTypeBankSend, To: alice.addr, Amount: uv(999_999_999_999)}), // fails
 	}
 	b2 := [][]byte{
-		alice.tx(t, testChain, 1, uv(10), storage.MsgOpenDeal{
-			Type: storage.MsgTypeOpenDeal, Class: storage.ClassMarket, CID: "cid-1", Size: 10,
+		alice.tx(t, testChain, 2, uv(10), storage.MsgOpenDeal{
+			Type: storage.MsgTypeOpenDeal, Class: storage.ClassMarket, CID: man.Root,
 			Provider: prov.addr, Duration: 100, Denom: "uvault", Replication: 1}),
-		alice.tx(t, testChain, 2, uv(10), access.MsgGrantAccess{
-			Type: access.MsgTypeGrantAccess, CID: "cid-1", Grantee: bob.addr, Capability: access.CapabilityRead}),
+		alice.tx(t, testChain, 3, uv(10), access.MsgGrantAccess{
+			Type: access.MsgTypeGrantAccess, CID: man.Root, Grantee: bob.addr, Capability: access.CapabilityRead}),
 		alice.tx(t, testChain, 1, uv(10), MsgBankSend{Type: MsgTypeBankSend, To: bob.addr, Amount: uv(1)}), // stale nonce
 	}
 	run := func(db kv.DB) (hashes []string, headers []BlockHeader) {
@@ -114,8 +129,8 @@ func TestExecuteBlockDeterministicReplay(t *testing.T) {
 	if hd1[1].PrevAppHash != h1[0] {
 		t.Fatal("prev_app_hash does not chain")
 	}
-	if hd1[0].OKCount != 2 || hd1[1].OKCount != 2 {
-		t.Fatalf("ok counts %d/%d, want 2/2", hd1[0].OKCount, hd1[1].OKCount)
+	if hd1[0].OKCount != 3 || hd1[1].OKCount != 2 {
+		t.Fatalf("ok counts %d/%d, want 3/2", hd1[0].OKCount, hd1[1].OKCount)
 	}
 }
 
@@ -261,11 +276,13 @@ func TestLabModeGatesSimulatedDeposit(t *testing.T) {
 func TestGrantAccessRequiresCIDOwner(t *testing.T) {
 	alice, bob, prov := newAcct(t), newAcct(t), newAcct(t)
 	app := memApp(t, testGenesis(false, alice, bob, prov))
+	man := manifestFor(t, objA, "text/plain", "a.txt")
 	exec(t, app, "",
 		prov.tx(t, testChain, 0, nil, storage.MsgRegisterProvider{
 			Type: storage.MsgTypeRegisterProvider, Endpoint: "http://p", Capacity: 1 << 20, Collateral: uv(100)[0]}),
-		alice.tx(t, testChain, 0, nil, storage.MsgOpenDeal{
-			Type: storage.MsgTypeOpenDeal, Class: storage.ClassMarket, CID: "cid-1", Size: 10,
+		alice.tx(t, testChain, 0, nil, man),
+		alice.tx(t, testChain, 1, nil, storage.MsgOpenDeal{
+			Type: storage.MsgTypeOpenDeal, Class: storage.ClassMarket, CID: man.Root,
 			Provider: prov.addr, Duration: 100, Denom: "uvault", Replication: 1}))
 	grant := func(a testAcct, cid string) bool {
 		res := exec(t, app, "", a.tx(t, testChain, app.Nonce(a.addr), nil, access.MsgGrantAccess{
@@ -276,10 +293,10 @@ func TestGrantAccessRequiresCIDOwner(t *testing.T) {
 		_ = app.View(func(s kv.Store) error { n = len(access.NewKeeper(s).Grants()); return nil })
 		return
 	}
-	if grant(bob, "cid-1") || count() != 0 {
+	if grant(bob, man.Root) || count() != 0 {
 		t.Fatal("non-owner granted access")
 	}
-	if !grant(alice, "cid-1") || count() != 1 {
+	if !grant(alice, man.Root) || count() != 1 {
 		t.Fatal("owner grant failed")
 	}
 	if grant(alice, "nope") {

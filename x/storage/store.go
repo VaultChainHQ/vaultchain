@@ -85,16 +85,9 @@ func (k Keeper) Proofs() []Proof {
 
 func (k Keeper) SetProof(p Proof) { kv.SetJSON(k.S, idKey(prefixProof, p.ID), p) }
 
-// OwnerOfCID returns the owner of the earliest deal for cid (lowest deal id,
-// so the result is deterministic). Replaced by manifest ownership in M5.
+// OwnerOfCID returns the owner of a committed manifest (the CID is the
+// manifest root).
 func (k Keeper) OwnerOfCID(cid string) (string, bool) {
-	owner, found := "", false
-	kv.IterateJSON(k.S, prefixDeal, func(_ []byte, d Deal) bool {
-		if d.CID == cid {
-			owner, found = d.Owner, true
-			return false // ascending id order: first match is the lowest id
-		}
-		return true
-	})
-	return owner, found
+	r, ok := k.Manifest(cid)
+	return r.Owner, ok
 }

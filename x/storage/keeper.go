@@ -92,8 +92,22 @@ func (k Keeper) BuyCapacity(msg MsgBuyCapacity, height int64) error {
 }
 
 func (k Keeper) OpenDeal(msg MsgOpenDeal, height int64) error {
-	if msg.From == "" || msg.CID == "" || msg.Size == 0 || msg.Provider == "" || msg.Duration <= 0 {
+	if msg.From == "" || msg.CID == "" || msg.Provider == "" || msg.Duration <= 0 {
 		return fmt.Errorf("invalid open deal fields")
+	}
+	// A deal stores a committed manifest: the CID is its root.
+	man, ok := k.Manifest(msg.CID)
+	if !ok {
+		return fmt.Errorf("manifest %s not committed (commit-manifest first)", msg.CID)
+	}
+	if man.Owner != msg.From {
+		return fmt.Errorf("only the manifest owner may open a deal for %s", msg.CID)
+	}
+	if msg.Size == 0 {
+		msg.Size = man.Size
+	}
+	if msg.Size != man.Size {
+		return fmt.Errorf("deal size %d does not match manifest size %d", msg.Size, man.Size)
 	}
 	if msg.Class != ClassMarket && msg.Class != ClassArchive {
 		return fmt.Errorf("class must be market or archive")

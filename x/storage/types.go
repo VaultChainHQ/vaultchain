@@ -21,6 +21,8 @@ type Params struct {
 	IBCPolicyNote string `json:"ibc_policy_note"`
 	PricePerGB    int64  `json:"price_per_gb_uvault"` // reference pricing for personal
 	BlockInterval int64  `json:"proof_interval_blocks"`
+	// MaxObjectBytes caps the size of a committed manifest (0 = unlimited).
+	MaxObjectBytes uint64 `json:"max_object_bytes"`
 }
 
 func DefaultParams() Params {
@@ -29,6 +31,7 @@ func DefaultParams() Params {
 		IBCPolicyNote:         "ICS-20 tokens may fund deals; all storage infrastructure is native to Vaultchain.",
 		PricePerGB:            1_000_000, // 1 vault per GB reference
 		BlockInterval:         10,
+		MaxObjectBytes:        4 << 30, // 4 GiB
 	}
 }
 

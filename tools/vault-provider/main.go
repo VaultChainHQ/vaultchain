@@ -101,10 +101,10 @@ func (s *server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	writeJSON(w, 200, map[string]any{
-		"status":  "online",
-		"address": s.addr,
+		"status":   "online",
+		"address":  s.addr,
 		"chain_id": s.chainID,
-		"files":   n,
+		"files":    n,
 	})
 }
 

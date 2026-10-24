@@ -108,6 +108,12 @@ func DecodeMsg(raw json.RawMessage) (any, error) {
 			return nil, fmt.Errorf("%s: %w", head.Type, err)
 		}
 		return m, nil
+	case storage.MsgTypeCommitManifest:
+		var m storage.MsgCommitManifest
+		if err := strictUnmarshal(raw, &m); err != nil {
+			return nil, fmt.Errorf("%s: %w", head.Type, err)
+		}
+		return m, nil
 	case storage.MsgTypeBuyCapacity:
 		var m storage.MsgBuyCapacity
 		if err := strictUnmarshal(raw, &m); err != nil {
@@ -294,6 +300,9 @@ func withSigner(m any, signer string) any {
 		v.From = signer
 		return v
 	case storage.MsgOpenDeal:
+		v.From = signer
+		return v
+	case storage.MsgCommitManifest:
 		v.From = signer
 		return v
 	case storage.MsgSubmitProof:

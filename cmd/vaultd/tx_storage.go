@@ -1,10 +1,17 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"mime"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/vaultchain/vaultchain/pkg/chunk"
 	"github.com/vaultchain/vaultchain/x/access"
 	"github.com/vaultchain/vaultchain/x/storage"
 )
@@ -17,6 +24,7 @@ func cmdTxStorage() *cobra.Command {
 	root.AddCommand(
 		cmdTxRegisterProvider(),
 		cmdTxBuyCapacity(),
+		cmdTxCommitManifest(),
 		cmdTxOpenDeal(),
 		cmdTxSubmitProof(),
 	)
@@ -83,8 +91,8 @@ func cmdTxBuyCapacity() *cobra.Command {
 func cmdTxOpenDeal() *cobra.Command {
 	var replication uint32
 	cmd := &cobra.Command{
-		Use:   "open-deal [class] [cid] [size] [provider] [duration_blocks] [denom]",
-		Short: "Open market or archive deal",
+		Use:   "open-deal [class] [manifest_root] [size] [provider] [duration_blocks] [denom]",
+		Short: "Open market or archive deal for a committed manifest (size 0 = manifest size)",
 		Args:  cobra.ExactArgs(6),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			size, err := strconv.ParseUint(args[2], 10, 64)
@@ -150,4 +158,55 @@ func cmdTxGrantAccess() *cobra.Command {
 			})
 		},
 	}
+}
+
+func cmdTxCommitManifest() *cobra.Command {
+	var (
+		mimeType  string
+		name      string
+		chunkSize int
+		dryRun    bool
+	)
+	cmd := &cobra.Command{
+		Use:   "commit-manifest [file]",
+		Short: "Hash a local file into a chunk manifest and commit it on chain (signer becomes owner)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			f, err := os.Open(args[0])
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			if name == "" {
+				name = filepath.Base(args[0])
+			}
+			if mimeType == "" {
+				mimeType = mime.TypeByExtension(filepath.Ext(args[0]))
+				if i := strings.IndexByte(mimeType, ';'); i >= 0 {
+					mimeType = mimeType[:i]
+				}
+				if mimeType == "" {
+					mimeType = "application/octet-stream"
+				}
+			}
+			m, _, err := chunk.Build(f, chunkSize, mimeType, name)
+			if err != nil {
+				return err
+			}
+			if dryRun {
+				b, _ := json.MarshalIndent(m, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				return nil
+			}
+			return postTx(cmd, storage.MsgCommitManifest{
+				Type: storage.MsgTypeCommitManifest, Root: m.Root, Size: m.Size,
+				ChunkSize: m.ChunkSize, Mime: m.Mime, Name: m.Name,
+			})
+		},
+	}
+	cmd.Flags().StringVar(&mimeType, "mime", "", "media type (default: from file extension)")
+	cmd.Flags().StringVar(&name, "name", "", "display name (default: file base name)")
+	cmd.Flags().IntVar(&chunkSize, "chunk-size", chunk.DefaultChunkSize, "chunk size in bytes")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the manifest instead of submitting")
+	return cmd
 }

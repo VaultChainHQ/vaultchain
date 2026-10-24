@@ -18,7 +18,8 @@ import (
 	"github.com/vaultchain/vaultchain/x/storage"
 )
 
-func (e *Engine) serveREST(ctx context.Context) error {
+// RESTHandler is the node's REST API (also used directly by tests).
+func (e *Engine) RESTHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/cosmos/base/tendermint/v1beta1/node_info", e.restNodeInfo)
 	mux.HandleFunc("/cosmos/bank/v1beta1/balances/", e.restBalances)
@@ -27,6 +28,8 @@ func (e *Engine) serveREST(ctx context.Context) error {
 	mux.HandleFunc("/vaultchain/storage/providers/", e.restProvider)
 	mux.HandleFunc("/vaultchain/storage/deals", e.restDeals)
 	mux.HandleFunc("/vaultchain/storage/deals/", e.restDeal)
+	mux.HandleFunc("/vaultchain/storage/manifests", e.restManifests)
+	mux.HandleFunc("/vaultchain/storage/manifests/", e.restManifest)
 	mux.HandleFunc("/vaultchain/storage/plans", e.restPlans)
 	mux.HandleFunc("/vaultchain/storage/proofs", e.restProofs)
 	mux.HandleFunc("/vaultchain/access/grants", e.restGrants)
@@ -35,7 +38,11 @@ func (e *Engine) serveREST(ctx context.Context) error {
 	mux.HandleFunc("/vaultchain/txs", e.restSubmitTx)
 	mux.HandleFunc("/vaultchain/txs/", e.restTx)
 
-	srv := &http.Server{Addr: e.cfg.RESTAddr, Handler: cors(mux), ReadHeaderTimeout: 5 * time.Second}
+	return cors(mux)
+}
+
+func (e *Engine) serveREST(ctx context.Context) error {
+	srv := &http.Server{Addr: e.cfg.RESTAddr, Handler: e.RESTHandler(), ReadHeaderTimeout: 5 * time.Second}
 	ln, err := net.Listen("tcp", e.cfg.RESTAddr)
 	if err != nil {
 		return err
@@ -128,9 +135,41 @@ func (e *Engine) restProvider(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// restDeals lists deals, optionally filtered by ?cid= (manifest root), ?provider= and ?owner=.
 func (e *Engine) restDeals(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
 	e.query(w, func(s kv.Store) (any, error) {
-		return map[string]any{"deals": storage.NewKeeper(s).Deals()}, nil
+		out := []storage.Deal{}
+		for _, d := range storage.NewKeeper(s).Deals() {
+			if v := q.Get("cid"); v != "" && d.CID != v {
+				continue
+			}
+			if v := q.Get("provider"); v != "" && d.Provider != v {
+				continue
+			}
+			if v := q.Get("owner"); v != "" && d.Owner != v {
+				continue
+			}
+			out = append(out, d)
+		}
+		return map[string]any{"deals": out}, nil
+	})
+}
+
+func (e *Engine) restManifests(w http.ResponseWriter, r *http.Request) {
+	e.query(w, func(s kv.Store) (any, error) {
+		return map[string]any{"manifests": storage.NewKeeper(s).Manifests()}, nil
+	})
+}
+
+func (e *Engine) restManifest(w http.ResponseWriter, r *http.Request) {
+	root := strings.TrimPrefix(r.URL.Path, "/vaultchain/storage/manifests/")
+	e.query(w, func(s kv.Store) (any, error) {
+		m, ok := storage.NewKeeper(s).Manifest(root)
+		if !ok {
+			return nil, errNotFound
+		}
+		return map[string]any{"manifest": m}, nil
 	})
 }
 
@@ -188,7 +227,7 @@ func (e *Engine) restSubmitTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var raw json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&raw); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

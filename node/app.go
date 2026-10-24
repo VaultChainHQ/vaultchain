@@ -348,6 +348,8 @@ func execMsg(s kv.Store, ctx execCtx, m any) error {
 		return bk.SendCoins(msg.From, msg.To, msg.Amount)
 	case storage.MsgRegisterProvider:
 		return sk.RegisterProvider(msg, ctx.height)
+	case storage.MsgCommitManifest:
+		return sk.CommitManifest(msg, ctx.height)
 	case storage.MsgBuyCapacity:
 		return sk.BuyCapacity(msg, ctx.height)
 	case storage.MsgOpenDeal:
