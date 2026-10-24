@@ -35,18 +35,13 @@ func (e *Engine) serveRPC(ctx context.Context) error {
 }
 
 func (e *Engine) handleStatus(w http.ResponseWriter, r *http.Request) {
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
-	latest := BlockHeader{Height: e.store.State.Height, ChainID: e.store.State.ChainID}
-	if n := len(e.store.State.Blocks); n > 0 {
-		latest = e.store.State.Blocks[n-1]
-	}
-	resp := map[string]any{
+	latest := e.app.LatestHeader()
+	writeJSON(w, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      -1,
 		"result": map[string]any{
 			"node_info": map[string]any{
-				"network":  e.store.State.ChainID,
+				"network":  e.app.ChainID(),
 				"moniker":  "vaultchain-local",
 				"version":  "0.1.0",
 				"protocol": "vaultchain-local-engine",
@@ -62,10 +57,8 @@ func (e *Engine) handleStatus(w http.ResponseWriter, r *http.Request) {
 				"voting_power": "1",
 			},
 		},
-	}
-	writeJSON(w, resp)
+	})
 }
-
 func (e *Engine) handleBroadcast(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("tx")
 	if raw == "" {

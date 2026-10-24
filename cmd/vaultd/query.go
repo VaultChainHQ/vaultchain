@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/vaultchain/vaultchain/node"
 	vtypes "github.com/vaultchain/vaultchain/types"
 )
 
@@ -159,14 +158,4 @@ func cmdQueryIBCPolicy() *cobra.Command {
 			return getJSON(restBase(cmd) + "/vaultchain/ibc/policy")
 		},
 	}
-}
-
-// localDump is available for offline inspection if needed by scripts.
-func localDump(home string) (*node.ChainState, error) {
-	st, err := node.OpenStore(home)
-	if err != nil {
-		return nil, err
-	}
-	defer st.Close()
-	return st.State, nil
 }

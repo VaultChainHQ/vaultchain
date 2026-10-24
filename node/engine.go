@@ -2,13 +2,16 @@ package node
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/vaultchain/vaultchain/kv"
+	"github.com/vaultchain/vaultchain/x/bank"
 )
 
 type Config struct {
@@ -16,43 +19,69 @@ type Config struct {
 	RPCAddr       string
 	RESTAddr      string
 	BlockInterval time.Duration
+	// Proposer is the account that receives tx fees and is recorded in block
+	// headers. Empty means fees go to the fee collector module account.
+	Proposer string
+	// TxRetention is how many blocks of tx records to keep (default 1000).
+	TxRetention int64
 }
 
 type Engine struct {
 	cfg     Config
-	store   *Store
+	db      *kv.BoltDB
+	app     *App
 	mempool []json.RawMessage
-	mpMu    sync.Mutex
+	mpMu    sync.Mutex        // guards mempool, pending, and block production
 	pending map[string]uint64 // signer -> next nonce including queued txs
 	genesis *Genesis
 }
+
+// DBFile is the state database inside <home>/data.
+const DBFile = "state.db"
+
+// legacyDBFile held the single-JSON-blob state of earlier versions.
+const legacyDBFile = "vaultchain.db"
 
 func NewEngine(cfg Config) (*Engine, error) {
 	if cfg.BlockInterval <= 0 {
 		cfg.BlockInterval = 2 * time.Second
 	}
-	store, err := OpenStore(cfg.Home)
-	if err != nil {
+	dataDir := filepath.Join(cfg.Home, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, err
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, legacyDBFile)); err == nil {
+		if _, err := os.Stat(filepath.Join(dataDir, DBFile)); err != nil {
+			return nil, fmt.Errorf("found legacy state %s: this version stores state per key and uses signed txs, "+
+				"so a fresh devnet is required (stop the node, delete %s and re-run `vaultd init`)",
+				filepath.Join(dataDir, legacyDBFile), dataDir)
+		}
 	}
 	g, err := LoadGenesis(cfg.Home)
 	if err != nil {
-		_ = store.Close()
 		return nil, fmt.Errorf("load genesis: %w", err)
 	}
-	e := &Engine{cfg: cfg, store: store, genesis: g, pending: map[string]uint64{}}
-	if store.State.Height == 0 && store.State.ChainID == "" {
-		if err := store.InitFromGenesis(g); err != nil {
-			_ = store.Close()
+	db, err := kv.OpenBolt(filepath.Join(dataDir, DBFile))
+	if err != nil {
+		return nil, err
+	}
+	app := NewApp(db, AppConfig{TxRetention: cfg.TxRetention})
+	if !app.Initialized() {
+		if err := app.InitChain(g); err != nil {
+			_ = db.Close()
 			return nil, err
 		}
+	} else if app.ChainID() != g.ChainID {
+		_ = db.Close()
+		return nil, fmt.Errorf("genesis chain_id %q does not match database chain_id %q", g.ChainID, app.ChainID())
 	}
-	return e, nil
+	return &Engine{cfg: cfg, db: db, app: app, genesis: g, pending: map[string]uint64{}}, nil
 }
 
-func (e *Engine) Close() error { return e.store.Close() }
+func (e *Engine) Close() error { return e.db.Close() }
 
-func (e *Engine) Store() *Store { return e.store }
+// App exposes the state machine (for tests and tooling).
+func (e *Engine) App() *App { return e.app }
 
 const maxMempool = 10000
 
@@ -68,11 +97,15 @@ func (e *Engine) SubmitTx(raw json.RawMessage) (string, error) {
 	if len(e.mempool) >= maxMempool {
 		return "", fmt.Errorf("mempool full")
 	}
-	e.store.mu.RLock()
-	chainID := e.store.State.ChainID
-	next := e.store.State.Accounts[dt.Signer]
-	bal := e.store.State.Bank.GetBalance(dt.Signer)
-	e.store.mu.RUnlock()
+	var chainID string
+	var next uint64
+	var canPayFee bool
+	_ = e.app.View(func(s kv.Store) error {
+		chainID = e.app.ChainID()
+		next = Nonce(s, dt.Signer)
+		canPayFee = bank.NewKeeper(s).GetBalance(dt.Signer).IsAllGTE(dt.Tx.Fee)
+		return nil
+	})
 	if dt.Tx.ChainID != chainID {
 		return "", fmt.Errorf("wrong chain id: got %q want %q", dt.Tx.ChainID, chainID)
 	}
@@ -82,7 +115,7 @@ func (e *Engine) SubmitTx(raw json.RawMessage) (string, error) {
 	if dt.Tx.Nonce != next {
 		return "", fmt.Errorf("bad nonce: got %d want %d", dt.Tx.Nonce, next)
 	}
-	if !bal.IsAllGTE(dt.Tx.Fee) {
+	if !canPayFee {
 		return "", fmt.Errorf("insufficient funds for fee")
 	}
 	e.mempool = append(e.mempool, raw)
@@ -95,15 +128,14 @@ func (e *Engine) SubmitTx(raw json.RawMessage) (string, error) {
 func (e *Engine) AccountNonces(addr string) (nonce, pending uint64) {
 	e.mpMu.Lock()
 	defer e.mpMu.Unlock()
-	e.store.mu.RLock()
-	nonce = e.store.State.Accounts[addr]
-	e.store.mu.RUnlock()
+	nonce = e.app.Nonce(addr)
 	pending = nonce
 	if p, ok := e.pending[addr]; ok {
 		pending = p
 	}
 	return
 }
+
 func (e *Engine) Run(ctx context.Context) error {
 	rpcErr := make(chan error, 1)
 	restErr := make(chan error, 1)
@@ -114,7 +146,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	defer ticker.Stop()
 
 	log.Printf("vaultchain node started chain_id=%s height=%d rpc=%s rest=%s",
-		e.store.State.ChainID, e.store.State.Height, e.cfg.RPCAddr, e.cfg.RESTAddr)
+		e.app.ChainID(), e.app.Height(), e.cfg.RPCAddr, e.cfg.RESTAddr)
 
 	for {
 		select {
@@ -136,6 +168,8 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 }
 
+// produceBlock drains the mempool into one block. The wall clock is read here,
+// once, as block input; the state machine itself never reads it.
 func (e *Engine) produceBlock() error {
 	e.mpMu.Lock()
 	defer e.mpMu.Unlock()
@@ -143,46 +177,20 @@ func (e *Engine) produceBlock() error {
 	e.mempool = nil
 	e.pending = map[string]uint64{}
 
-	e.store.mu.Lock()
-	defer e.store.mu.Unlock()
-
-	height := e.store.State.Height + 1
-	applied := 0
+	now := normTime(time.Now())
+	if last := e.app.LastBlockTime(); !now.After(last) {
+		now = last.Add(time.Millisecond)
+	}
+	in := BlockInput{Height: e.app.Height() + 1, Time: now, Proposer: e.cfg.Proposer}
 	for _, raw := range txs {
-		res, err := ApplyTx(e.store.State, raw)
-		rec := TxRecord{
-			Hash:   HashTx(raw),
-			Height: height,
-			Raw:    raw,
-			Result: res,
-		}
-		if err != nil {
-			rec.Result = "err: " + err.Error()
-		} else {
-			applied++
-		}
-		e.store.State.Txs = append(e.store.State.Txs, rec)
+		in.Txs = append(in.Txs, raw)
 	}
-
-	appHash := sha256.Sum256([]byte(fmt.Sprintf("%s/%d/%d", e.store.State.ChainID, height, applied)))
-	hdr := BlockHeader{
-		Height:  height,
-		Time:    time.Now().UTC(),
-		TxCount: len(txs),
-		AppHash: hex.EncodeToString(appHash[:8]),
-		ChainID: e.store.State.ChainID,
-	}
-	e.store.State.Height = height
-	e.store.State.Blocks = append(e.store.State.Blocks, hdr)
-	// Keep last 256 blocks in memory snapshot.
-	if len(e.store.State.Blocks) > 256 {
-		e.store.State.Blocks = e.store.State.Blocks[len(e.store.State.Blocks)-256:]
-	}
-	if err := e.store.PersistUnlocked(); err != nil {
+	res, err := e.app.ExecuteBlock(in)
+	if err != nil {
 		return err
 	}
-	if height%10 == 0 || applied > 0 {
-		log.Printf("committed block height=%d txs=%d applied=%d apphash=%s", height, len(txs), applied, hdr.AppHash)
+	if h := res.Header; h.Height%10 == 0 || h.TxCount > 0 {
+		log.Printf("committed block height=%d txs=%d ok=%d apphash=%s", h.Height, h.TxCount, h.OKCount, h.AppHash[:16])
 	}
 	return nil
 }

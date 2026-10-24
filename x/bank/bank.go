@@ -5,78 +5,77 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"github.com/vaultchain/vaultchain/kv"
 	vtypes "github.com/vaultchain/vaultchain/types"
 )
 
 const ModuleEscrow = "vaultchain-storage-escrow"
 const FeeCollector = "vaultchain-fee-collector"
 
-// State holds account balances keyed by bech32 address.
-type State struct {
-	Balances map[string]sdk.Coins `json:"balances"`
+var balPrefix = []byte("bank/bal/")
+
+func balKey(addr string) []byte { return append(append([]byte(nil), balPrefix...), addr...) }
+
+// Keeper reads and writes balances (one kv entry per account).
+type Keeper struct {
+	S kv.Store
 }
 
-func NewState() *State {
-	return &State{Balances: make(map[string]sdk.Coins)}
-}
+func NewKeeper(s kv.Store) Keeper { return Keeper{S: s} }
 
-func (s *State) GetBalance(addr string) sdk.Coins {
-	if s.Balances == nil {
-		s.Balances = make(map[string]sdk.Coins)
-	}
-	c, ok := s.Balances[addr]
-	if !ok {
+func (k Keeper) GetBalance(addr string) sdk.Coins {
+	var c sdk.Coins
+	if !kv.GetJSON(k.S, balKey(addr), &c) {
 		return sdk.NewCoins()
 	}
 	return c.Sort()
 }
 
-func (s *State) SetBalance(addr string, coins sdk.Coins) {
-	if s.Balances == nil {
-		s.Balances = make(map[string]sdk.Coins)
-	}
+func (k Keeper) SetBalance(addr string, coins sdk.Coins) {
 	cleaned := coins.Sort()
 	if cleaned.IsZero() {
-		delete(s.Balances, addr)
+		k.S.Delete(balKey(addr))
 		return
 	}
-	s.Balances[addr] = cleaned
+	kv.SetJSON(k.S, balKey(addr), cleaned)
 }
 
-func (s *State) AddCoins(addr string, coins sdk.Coins) error {
+// Balances lists every non-empty account in address order.
+func (k Keeper) Balances() map[string]sdk.Coins {
+	out := map[string]sdk.Coins{}
+	kv.IterateJSON(k.S, balPrefix, func(key []byte, c sdk.Coins) bool {
+		out[string(key[len(balPrefix):])] = c
+		return true
+	})
+	return out
+}
+
+func (k Keeper) AddCoins(addr string, coins sdk.Coins) error {
 	if !coins.IsValid() {
 		return fmt.Errorf("invalid coins: %s", coins)
 	}
-	s.SetBalance(addr, s.GetBalance(addr).Add(coins...))
+	k.SetBalance(addr, k.GetBalance(addr).Add(coins...))
 	return nil
 }
 
-func (s *State) SubCoins(addr string, coins sdk.Coins) error {
+func (k Keeper) SubCoins(addr string, coins sdk.Coins) error {
 	if !coins.IsValid() {
 		return fmt.Errorf("invalid coins: %s", coins)
 	}
-	bal := s.GetBalance(addr)
+	bal := k.GetBalance(addr)
 	newBal, neg := bal.SafeSub(coins...)
 	if neg {
 		return fmt.Errorf("insufficient funds: have %s need %s", bal, coins)
 	}
-	s.SetBalance(addr, newBal)
+	k.SetBalance(addr, newBal)
 	return nil
 }
 
-func (s *State) SendCoins(from, to string, coins sdk.Coins) error {
-	if err := s.SubCoins(from, coins); err != nil {
+func (k Keeper) SendCoins(from, to string, coins sdk.Coins) error {
+	if err := k.SubCoins(from, coins); err != nil {
 		return err
 	}
-	return s.AddCoins(to, coins)
-}
-
-func (s *State) PayFee(from string, fee sdk.Coins) error {
-	if fee.IsZero() {
-		return nil
-	}
-	// Burn native fee portion by sending to fee collector (tracked, not redistributed in v1).
-	return s.SendCoins(from, FeeCollector, fee)
+	return k.AddCoins(to, coins)
 }
 
 func EscrowAddress() string {

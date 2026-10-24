@@ -15,7 +15,7 @@ mkdir -p build
 [[ -x build/vaultd ]] || go build -o build/vaultd ./cmd/vaultd
 [[ -x build/vault-provider ]] || go build -o build/vault-provider ./tools/vault-provider
 
-./build/vaultd init local --home "${HOME_DIR}" --chain-id vault-local-1
+./build/vaultd init local --home "${HOME_DIR}" --chain-id vault-local-1 --lab-mode
 ./build/vaultd keys add validator --home "${HOME_DIR}" >/dev/null
 ./build/vaultd keys add alice --home "${HOME_DIR}" >/dev/null
 ./build/vaultd keys add provider --home "${HOME_DIR}" >/dev/null

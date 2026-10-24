@@ -5,17 +5,20 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"github.com/vaultchain/vaultchain/kv"
 	"github.com/vaultchain/vaultchain/x/bank"
 )
 
-// Keeper applies storage messages against bank + storage state.
+// Keeper applies storage messages against bank + storage state in a kv store.
 type Keeper struct {
-	Storage *State
-	Bank    *bank.State
+	S    kv.Store
+	Bank bank.Keeper
 }
 
+func NewKeeper(s kv.Store) Keeper { return Keeper{S: s, Bank: bank.NewKeeper(s)} }
+
 func (k Keeper) EnsurePaymentDenom(denom string) error {
-	if !k.Storage.Params.IsPaymentDenomAllowed(denom) {
+	if !k.Params().IsPaymentDenomAllowed(denom) {
 		return fmt.Errorf("denom %q not in payment_denom_whitelist", denom)
 	}
 	return nil
@@ -32,14 +35,14 @@ func (k Keeper) RegisterProvider(msg MsgRegisterProvider, height int64) error {
 	if err := k.Bank.SendCoins(msg.From, bank.EscrowAddress(), sdk.NewCoins(msg.Collateral)); err != nil {
 		return err
 	}
-	k.Storage.Providers[msg.From] = Provider{
+	k.SetProvider(Provider{
 		Address:    msg.From,
 		Endpoint:   msg.Endpoint,
 		Capacity:   msg.Capacity,
 		FreeBytes:  msg.Capacity,
 		Collateral: msg.Collateral,
 		Status:     "active",
-	}
+	})
 	return nil
 }
 
@@ -57,7 +60,7 @@ func (k Keeper) priceForBytes(bytes uint64, durationBlocks int64, denom string) 
 	if factor < 1 {
 		factor = 1
 	}
-	amount := int64(units) * k.Storage.Params.PricePerGB * factor
+	amount := int64(units) * k.Params().PricePerGB * factor
 	if amount < 1 {
 		amount = 1
 	}
@@ -75,9 +78,8 @@ func (k Keeper) BuyCapacity(msg MsgBuyCapacity, height int64) error {
 	if err := k.Bank.SendCoins(msg.From, bank.EscrowAddress(), sdk.NewCoins(payment)); err != nil {
 		return err
 	}
-	id := k.Storage.NextPlanID
-	k.Storage.NextPlanID++
-	k.Storage.Plans[id] = CapacityPlan{
+	id := k.nextID("plan")
+	k.SetPlan(CapacityPlan{
 		ID:        id,
 		Owner:     msg.From,
 		Bytes:     msg.Bytes,
@@ -85,7 +87,7 @@ func (k Keeper) BuyCapacity(msg MsgBuyCapacity, height int64) error {
 		StartH:    height,
 		EndH:      height + msg.Duration,
 		Payment:   payment,
-	}
+	})
 	return nil
 }
 
@@ -99,7 +101,7 @@ func (k Keeper) OpenDeal(msg MsgOpenDeal, height int64) error {
 	if err := k.EnsurePaymentDenom(msg.Denom); err != nil {
 		return err
 	}
-	prov, ok := k.Storage.Providers[msg.Provider]
+	prov, ok := k.Provider(msg.Provider)
 	if !ok || prov.Status != "active" {
 		return fmt.Errorf("provider not active: %s", msg.Provider)
 	}
@@ -123,11 +125,10 @@ func (k Keeper) OpenDeal(msg MsgOpenDeal, height int64) error {
 		return err
 	}
 	prov.FreeBytes -= msg.Size
-	k.Storage.Providers[msg.Provider] = prov
+	k.SetProvider(prov)
 
-	id := k.Storage.NextDealID
-	k.Storage.NextDealID++
-	k.Storage.Deals[id] = Deal{
+	id := k.nextID("deal")
+	k.SetDeal(Deal{
 		ID:          id,
 		Class:       msg.Class,
 		Owner:       msg.From,
@@ -140,7 +141,7 @@ func (k Keeper) OpenDeal(msg MsgOpenDeal, height int64) error {
 		Replication: replication,
 		LastProvenH: 0,
 		Status:      "open",
-	}
+	})
 	return nil
 }
 
@@ -148,7 +149,7 @@ func (k Keeper) SubmitProof(msg MsgSubmitProof, height int64) error {
 	if msg.From == "" || msg.CID == "" || msg.DealID == 0 {
 		return fmt.Errorf("invalid submit proof fields")
 	}
-	deal, ok := k.Storage.Deals[msg.DealID]
+	deal, ok := k.Deal(msg.DealID)
 	if !ok {
 		return fmt.Errorf("deal %d not found", msg.DealID)
 	}
@@ -165,17 +166,16 @@ func (k Keeper) SubmitProof(msg MsgSubmitProof, height int64) error {
 		return fmt.Errorf("attestation required")
 	}
 	deal.LastProvenH = height
-	k.Storage.Deals[msg.DealID] = deal
+	k.SetDeal(deal)
 
-	id := k.Storage.NextProofID
-	k.Storage.NextProofID++
-	k.Storage.Proofs[id] = Proof{
+	id := k.nextID("proof")
+	k.SetProof(Proof{
 		ID:          id,
 		DealID:      msg.DealID,
 		CID:         msg.CID,
 		Provider:    msg.From,
 		Height:      height,
 		Attestation: msg.Attestation,
-	}
+	})
 	return nil
 }

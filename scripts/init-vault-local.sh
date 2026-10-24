@@ -19,7 +19,7 @@ fi
 echo "Resetting home ${HOME_DIR}"
 rm -rf "${HOME_DIR}"
 
-"${BINARY}" init local-validator --home "${HOME_DIR}" --chain-id "${CHAIN_ID}"
+"${BINARY}" init local-validator --home "${HOME_DIR}" --chain-id "${CHAIN_ID}" --lab-mode
 "${BINARY}" keys add validator --home "${HOME_DIR}"
 ADDR="$("${BINARY}" keys show validator --home "${HOME_DIR}" | tr -d '\r' | tail -n1)"
 if [[ -z "${ADDR}" || "${ADDR}" != vault* ]]; then

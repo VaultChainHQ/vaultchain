@@ -3,14 +3,19 @@ package node
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/vaultchain/vaultchain/kv"
 	vtypes "github.com/vaultchain/vaultchain/types"
+	"github.com/vaultchain/vaultchain/x/access"
+	"github.com/vaultchain/vaultchain/x/bank"
 	"github.com/vaultchain/vaultchain/x/ibc"
+	"github.com/vaultchain/vaultchain/x/storage"
 )
 
 func (e *Engine) serveREST(ctx context.Context) error {
@@ -28,6 +33,7 @@ func (e *Engine) serveREST(ctx context.Context) error {
 	mux.HandleFunc(ibc.PolicyPath, e.restIBCPolicy)
 	mux.HandleFunc("/vaultchain/auth/accounts/", e.restAccount)
 	mux.HandleFunc("/vaultchain/txs", e.restSubmitTx)
+	mux.HandleFunc("/vaultchain/txs/", e.restTx)
 
 	srv := &http.Server{Addr: e.cfg.RESTAddr, Handler: cors(mux), ReadHeaderTimeout: 5 * time.Second}
 	ln, err := net.Listen("tcp", e.cfg.RESTAddr)
@@ -57,12 +63,30 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
+var errNotFound = errors.New("not found")
+
+// query runs fn on a consistent read snapshot and writes its result as JSON.
+func (e *Engine) query(w http.ResponseWriter, fn func(s kv.Store) (any, error)) {
+	var out any
+	err := e.app.View(func(s kv.Store) error {
+		var err error
+		out, err = fn(s)
+		return err
+	})
+	switch {
+	case errors.Is(err, errNotFound):
+		http.Error(w, "not found", http.StatusNotFound)
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	default:
+		writeJSON(w, out)
+	}
+}
+
 func (e *Engine) restNodeInfo(w http.ResponseWriter, r *http.Request) {
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
 	writeJSON(w, map[string]any{
 		"default_node_info": map[string]any{
-			"network": e.store.State.ChainID,
+			"network": e.app.ChainID(),
 			"moniker": "vaultchain-local",
 			"version": "0.1.0",
 		},
@@ -75,49 +99,39 @@ func (e *Engine) restNodeInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (e *Engine) restBalances(w http.ResponseWriter, r *http.Request) {
-	addr := strings.TrimPrefix(r.URL.Path, "/cosmos/bank/v1beta1/balances/")
-	addr = strings.Trim(addr, "/")
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
-	writeJSON(w, map[string]any{"balances": e.store.State.Bank.GetBalance(addr)})
+	addr := strings.Trim(strings.TrimPrefix(r.URL.Path, "/cosmos/bank/v1beta1/balances/"), "/")
+	e.query(w, func(s kv.Store) (any, error) {
+		return map[string]any{"balances": bank.NewKeeper(s).GetBalance(addr)}, nil
+	})
 }
 
 func (e *Engine) restStorageParams(w http.ResponseWriter, r *http.Request) {
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
-	writeJSON(w, map[string]any{"params": e.store.State.Storage.Params})
+	e.query(w, func(s kv.Store) (any, error) {
+		return map[string]any{"params": storage.NewKeeper(s).Params()}, nil
+	})
 }
 
 func (e *Engine) restProviders(w http.ResponseWriter, r *http.Request) {
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
-	list := make([]any, 0, len(e.store.State.Storage.Providers))
-	for _, p := range e.store.State.Storage.Providers {
-		list = append(list, p)
-	}
-	writeJSON(w, map[string]any{"providers": list})
+	e.query(w, func(s kv.Store) (any, error) {
+		return map[string]any{"providers": storage.NewKeeper(s).Providers()}, nil
+	})
 }
 
 func (e *Engine) restProvider(w http.ResponseWriter, r *http.Request) {
 	addr := strings.TrimPrefix(r.URL.Path, "/vaultchain/storage/providers/")
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
-	p, ok := e.store.State.Storage.Providers[addr]
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	writeJSON(w, map[string]any{"provider": p})
+	e.query(w, func(s kv.Store) (any, error) {
+		p, ok := storage.NewKeeper(s).Provider(addr)
+		if !ok {
+			return nil, errNotFound
+		}
+		return map[string]any{"provider": p}, nil
+	})
 }
 
 func (e *Engine) restDeals(w http.ResponseWriter, r *http.Request) {
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
-	list := make([]any, 0, len(e.store.State.Storage.Deals))
-	for _, d := range e.store.State.Storage.Deals {
-		list = append(list, d)
-	}
-	writeJSON(w, map[string]any{"deals": list})
+	e.query(w, func(s kv.Store) (any, error) {
+		return map[string]any{"deals": storage.NewKeeper(s).Deals()}, nil
+	})
 }
 
 func (e *Engine) restDeal(w http.ResponseWriter, r *http.Request) {
@@ -127,51 +141,37 @@ func (e *Engine) restDeal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
-	d, ok := e.store.State.Storage.Deals[id]
-	if !ok {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	writeJSON(w, map[string]any{"deal": d})
+	e.query(w, func(s kv.Store) (any, error) {
+		d, ok := storage.NewKeeper(s).Deal(id)
+		if !ok {
+			return nil, errNotFound
+		}
+		return map[string]any{"deal": d}, nil
+	})
 }
 
 func (e *Engine) restPlans(w http.ResponseWriter, r *http.Request) {
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
-	list := make([]any, 0, len(e.store.State.Storage.Plans))
-	for _, p := range e.store.State.Storage.Plans {
-		list = append(list, p)
-	}
-	writeJSON(w, map[string]any{"plans": list})
+	e.query(w, func(s kv.Store) (any, error) {
+		return map[string]any{"plans": storage.NewKeeper(s).Plans()}, nil
+	})
 }
 
 func (e *Engine) restProofs(w http.ResponseWriter, r *http.Request) {
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
-	list := make([]any, 0, len(e.store.State.Storage.Proofs))
-	for _, p := range e.store.State.Storage.Proofs {
-		list = append(list, p)
-	}
-	writeJSON(w, map[string]any{"proofs": list})
+	e.query(w, func(s kv.Store) (any, error) {
+		return map[string]any{"proofs": storage.NewKeeper(s).Proofs()}, nil
+	})
 }
 
 func (e *Engine) restGrants(w http.ResponseWriter, r *http.Request) {
 	cid := r.URL.Query().Get("cid")
-	e.store.mu.RLock()
-	defer e.store.mu.RUnlock()
-	if cid != "" {
-		writeJSON(w, map[string]any{"grants": e.store.State.Access.ListByCID(cid)})
-		return
-	}
-	list := make([]any, 0, len(e.store.State.Access.Grants))
-	for _, g := range e.store.State.Access.Grants {
-		list = append(list, g)
-	}
-	writeJSON(w, map[string]any{"grants": list})
+	e.query(w, func(s kv.Store) (any, error) {
+		k := access.NewKeeper(s)
+		if cid != "" {
+			return map[string]any{"grants": k.ListByCID(cid)}, nil
+		}
+		return map[string]any{"grants": k.Grants()}, nil
+	})
 }
-
 func (e *Engine) restIBCPolicy(w http.ResponseWriter, r *http.Request) {
 	b, err := ibc.PolicyJSON()
 	if err != nil {
@@ -208,4 +208,16 @@ func (e *Engine) restAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	nonce, pending := e.AccountNonces(addr)
 	writeJSON(w, map[string]any{"address": addr, "nonce": nonce, "pending_nonce": pending})
+}
+
+// restTx serves GET /vaultchain/txs/{hash}: the inclusion result of a tx while
+// its record is within the retention window.
+func (e *Engine) restTx(w http.ResponseWriter, r *http.Request) {
+	hash := strings.Trim(strings.TrimPrefix(r.URL.Path, "/vaultchain/txs/"), "/")
+	rec, ok := e.app.TxRecord(hash)
+	if !ok {
+		http.Error(w, "not found (unknown, still pending, or pruned)", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, map[string]any{"tx": rec})
 }

@@ -3,6 +3,8 @@ package access
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/vaultchain/vaultchain/kv"
 )
 
 const (
@@ -10,6 +12,11 @@ const (
 	MsgTypeGrantAccess = "access/GrantAccess"
 	CapabilityRead     = "read"
 	CapabilityWrite    = "write"
+)
+
+var (
+	prefixGrant = []byte("access/grant/")
+	keySeq      = []byte("access/seq")
 )
 
 type AccessGrant struct {
@@ -21,17 +28,12 @@ type AccessGrant struct {
 	ExpiryH    int64  `json:"expiry_height"`
 }
 
-type State struct {
-	Grants      map[uint64]AccessGrant `json:"grants"`
-	NextGrantID uint64                 `json:"next_grant_id"`
+// Keeper stores access grants, one kv entry each.
+type Keeper struct {
+	S kv.Store
 }
 
-func NewState() *State {
-	return &State{
-		Grants:      make(map[uint64]AccessGrant),
-		NextGrantID: 1,
-	}
-}
+func NewKeeper(s kv.Store) Keeper { return Keeper{S: s} }
 
 type MsgGrantAccess struct {
 	Type       string `json:"type"`
@@ -46,7 +48,7 @@ type MsgGrantAccess struct {
 type OwnerResolver func(cid string) (owner string, ok bool)
 
 // Grant records an access grant. Only the owner of the CID may grant access to it.
-func (s *State) Grant(msg MsgGrantAccess, height int64, ownerOf OwnerResolver) error {
+func (k Keeper) Grant(msg MsgGrantAccess, height int64, ownerOf OwnerResolver) error {
 	if msg.From == "" || msg.CID == "" || msg.Grantee == "" {
 		return fmt.Errorf("invalid grant access fields")
 	}
@@ -63,9 +65,9 @@ func (s *State) Grant(msg MsgGrantAccess, height int64, ownerOf OwnerResolver) e
 	if owner != msg.From {
 		return fmt.Errorf("only the owner of cid %s may grant access", msg.CID)
 	}
-	id := s.NextGrantID
-	s.NextGrantID++
-	s.Grants[id] = AccessGrant{
+	id := kv.GetU64(k.S, keySeq) + 1
+	kv.SetU64(k.S, keySeq, id)
+	g := AccessGrant{
 		ID:         id,
 		CID:        msg.CID,
 		Owner:      msg.From,
@@ -73,12 +75,20 @@ func (s *State) Grant(msg MsgGrantAccess, height int64, ownerOf OwnerResolver) e
 		Capability: msg.Capability,
 		ExpiryH:    msg.ExpiryH,
 	}
+	kv.SetJSON(k.S, append(append([]byte(nil), prefixGrant...), kv.U64(id)...), g)
 	return nil
 }
 
-func (s *State) ListByCID(cid string) []AccessGrant {
+// Grants lists all grants in id order.
+func (k Keeper) Grants() []AccessGrant {
 	out := make([]AccessGrant, 0)
-	for _, g := range s.Grants {
+	kv.IterateJSON(k.S, prefixGrant, func(_ []byte, g AccessGrant) bool { out = append(out, g); return true })
+	return out
+}
+
+func (k Keeper) ListByCID(cid string) []AccessGrant {
+	out := make([]AccessGrant, 0)
+	for _, g := range k.Grants() {
 		if g.CID == cid {
 			out = append(out, g)
 		}

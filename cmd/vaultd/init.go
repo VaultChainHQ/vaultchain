@@ -16,6 +16,7 @@ import (
 
 func cmdInit() *cobra.Command {
 	var chainID string
+	var labMode bool
 	cmd := &cobra.Command{
 		Use:   "init [moniker]",
 		Short: "Initialize node home and genesis",
@@ -42,6 +43,7 @@ func cmdInit() *cobra.Command {
 				GenesisTime: time.Now().UTC(),
 				Accounts:    nil,
 				Storage:     storage.DefaultParams(),
+				LabMode:     labMode,
 			}
 			if err := node.WriteGenesis(home, g); err != nil {
 				return err
@@ -56,6 +58,7 @@ func cmdInit() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&chainID, "chain-id", vtypes.DefaultChainID, "genesis chain id")
+	cmd.Flags().BoolVar(&labMode, "lab-mode", false, "enable lab-only features (ibc mint-voucher); fixed at genesis")
 	return cmd
 }
 

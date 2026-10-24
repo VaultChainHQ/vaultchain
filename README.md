@@ -41,7 +41,7 @@ go build -o build/vaultd ./cmd/vaultd
 ```bash
 ./scripts/init-vault-local.sh
 # or manually:
-vaultd init local-validator --home ~/.vaultchain --chain-id vault-local-1
+vaultd init local-validator --home ~/.vaultchain --chain-id vault-local-1 --lab-mode
 vaultd keys add validator --home ~/.vaultchain
 vaultd genesis add-genesis-account $(vaultd keys show validator --home ~/.vaultchain) 100000000000000uvault --home ~/.vaultchain
 ```
@@ -72,15 +72,32 @@ vaultd tx storage register-provider http://127.0.0.1:8080 1099511627776 1000000u
 vaultd tx storage buy-capacity 1073741824 10000 uvault --from alice --home ~/.vaultchain
 vaultd tx storage open-deal market bafyExample 1048576 <provider-addr> 5000 uvault --from alice --home ~/.vaultchain
 
-# Lab-only fake IBC voucher for payment whitelist testing
+# Lab-only fake IBC voucher (requires the chain to be initialised with `--lab-mode`)
 vaultd tx ibc-lab mint-voucher $(vaultd keys show alice --home ~/.vaultchain) ibc/ATOM 1000000 --from alice --home ~/.vaultchain
 ```
+
+## Transactions, state and upgrade notes
+
+- Every tx is signed (secp256k1, `chain_id`, per-account `nonce`, `fee`); the sender is derived from the
+  signature. `vaultd tx ... --from <key> [--fee 10uvault]` signs for you.
+- `vaultd init --lab-mode` enables lab-only messages (`ibc-lab mint-voucher`). It is fixed at genesis; a chain
+  initialised without it rejects them.
+- Block execution is deterministic: block time and proposer are inputs, not read from the clock, and each tx's
+  messages run on a cached branch that is committed only if all succeed (a failed tx costs its fee and nonce only).
+- State lives in `<home>/data/state.db` (bbolt), one key per account / provider / deal / ..., so a block writes only
+  what it changed. Tx records are kept for the last 1000 blocks (`GET /vaultchain/txs/<hash>`); headers are kept forever.
+- Details: [`docs/STATE-MACHINE.md`](docs/STATE-MACHINE.md).
+
+**Upgrading from earlier builds: a fresh devnet is required.** The old single-blob `vaultchain.db` and the old
+unsigned txs are not migrated. `vaultd start` refuses to run on a legacy `data/vaultchain.db` and tells you to stop the
+node, delete `<home>/data`, and re-run `vaultd init` (`scripts/init-vault-local.sh` does this for you).
 
 ## Layout
 
 ```
 cmd/vaultd/            CLI + daemon entry
-node/                  local engine (blocks, mempool, RPC, REST, bolt state)
+node/                  local engine (blocks, mempool, RPC, REST) + deterministic App state machine
+kv/                    per-key state store (bbolt + in-memory), branch cache, app hash
 x/storage/             providers, capacity, deals, proofs, denom whitelist
 x/access/              AccessGrant store
 x/bank/                balances + escrow

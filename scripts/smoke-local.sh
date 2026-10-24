@@ -9,7 +9,7 @@ go build -o build/vaultd ./cmd/vaultd
 
 HOME_DIR=/tmp/vaultchain-smoke
 rm -rf "${HOME_DIR}"
-./build/vaultd init local --home "${HOME_DIR}" --chain-id vault-local-1
+./build/vaultd init local --home "${HOME_DIR}" --chain-id vault-local-1 --lab-mode
 ./build/vaultd keys add validator --home "${HOME_DIR}"
 ADDR="$(./build/vaultd keys show validator --home "${HOME_DIR}" | tr -d '\r' | tail -n1)"
 echo "CAPTURED=${ADDR}"
