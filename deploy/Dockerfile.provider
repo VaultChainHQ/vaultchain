@@ -1,0 +1,19 @@
+# vaultl1 storage provider (+ vaultd CLI for its key and registration tx).
+#   docker build -f deploy/Dockerfile.provider -t vaultl1-provider .
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/vaultd ./cmd/vaultd \
+ && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/vault-provider ./tools/vault-provider
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates curl su-exec \
+ && adduser -D -u 10001 vault \
+ && mkdir -p /data && chown vault:vault /data
+COPY --from=build /out/vaultd /out/vault-provider /usr/local/bin/
+COPY deploy/provider-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+EXPOSE 3333
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

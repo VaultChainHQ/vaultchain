@@ -1,0 +1,7 @@
+.git
+.github
+build
+*.log
+*.exe
+docs
+**/*_test.go

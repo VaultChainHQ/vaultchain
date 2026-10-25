@@ -1,0 +1,41 @@
+# Fly.io app for the vaultl1 devnet node. Deploy from the repo root:
+#   fly deploy -c fly.devnet.toml --ha=false
+# Needs ONE volume named vaultd_data in the same region (see docs/FLY-DEVNET.md).
+app = "vaultl1-devnet"
+primary_region = "iad"
+
+[build]
+  dockerfile = "deploy/Dockerfile.devnet"
+
+[env]
+  CHAIN_ID = "vault-devnet-1"
+  BLOCK_INTERVAL = "3s"
+
+[[mounts]]
+  source = "vaultd_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+# REST over HTTPS (the RPC port stays on loopback inside the machine).
+[http_service]
+  internal_port = 1317
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 100
+    hard_limit = 200
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "15s"
+    timeout = "5s"
+    method = "GET"
+    path = "/cosmos/base/tendermint/v1beta1/node_info"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
