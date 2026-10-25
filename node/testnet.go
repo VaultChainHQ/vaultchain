@@ -14,8 +14,8 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	"github.com/vaultchain/vaultchain/x/storage"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 // NetworkOptions describes an N-validator network to generate.

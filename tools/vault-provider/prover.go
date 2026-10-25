@@ -13,9 +13,9 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/vaultchain/vaultchain/node"
-	"github.com/vaultchain/vaultchain/pkg/chunk"
-	"github.com/vaultchain/vaultchain/x/storage"
+	"github.com/VaultChainHQ/vaultchain/node"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 // prover answers the chain's storage challenges for this provider's open

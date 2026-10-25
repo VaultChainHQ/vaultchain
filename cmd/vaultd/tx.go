@@ -11,10 +11,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	"github.com/vaultchain/vaultchain/node"
-	vtypes "github.com/vaultchain/vaultchain/types"
-	"github.com/vaultchain/vaultchain/x/ibc"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	"github.com/VaultChainHQ/vaultchain/node"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
+	"github.com/VaultChainHQ/vaultchain/x/ibc"
 )
 
 func cmdTx() *cobra.Command {

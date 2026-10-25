@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/vaultchain/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
 )
 
 // Disk layout (everything under <data>/objects):

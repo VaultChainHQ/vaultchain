@@ -9,11 +9,11 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	vtypes "github.com/vaultchain/vaultchain/types"
-	"github.com/vaultchain/vaultchain/x/access"
-	"github.com/vaultchain/vaultchain/x/ibc"
-	"github.com/vaultchain/vaultchain/x/storage"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
+	"github.com/VaultChainHQ/vaultchain/x/access"
+	"github.com/VaultChainHQ/vaultchain/x/ibc"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 const (

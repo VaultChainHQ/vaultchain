@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaultchain/vaultchain/x/ibc"
+	"github.com/VaultChainHQ/vaultchain/x/ibc"
 )
 
 func policyEngine(t *testing.T, cfg Config, lab bool, funded ...testAcct) *Engine {

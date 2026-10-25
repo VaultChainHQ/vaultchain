@@ -3,7 +3,7 @@ package storage
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	vtypes "github.com/vaultchain/vaultchain/types"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
 )
 
 const (

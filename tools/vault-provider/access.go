@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/vaultchain/vaultchain/pkg/readauth"
-	"github.com/vaultchain/vaultchain/x/storage"
+	"github.com/VaultChainHQ/vaultchain/pkg/readauth"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 // Read access policy. A reader is identified by a signed read token

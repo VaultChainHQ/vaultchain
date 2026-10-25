@@ -1,6 +1,6 @@
 package storage
 
-import "github.com/vaultchain/vaultchain/kv"
+import "github.com/VaultChainHQ/vaultchain/kv"
 
 var (
 	keyParams   = []byte("storage/params")

@@ -8,8 +8,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	vtypes "github.com/vaultchain/vaultchain/types"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
 )
 
 type testAcct struct {

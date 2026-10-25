@@ -12,10 +12,10 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/vaultchain/vaultchain/node"
-	"github.com/vaultchain/vaultchain/pkg/chunk"
-	vtypes "github.com/vaultchain/vaultchain/types"
-	"github.com/vaultchain/vaultchain/x/storage"
+	"github.com/VaultChainHQ/vaultchain/node"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 // chainFixture is a real engine behind a REST handler, one block per send.

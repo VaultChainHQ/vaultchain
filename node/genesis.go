@@ -9,7 +9,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/vaultchain/vaultchain/x/storage"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 type GenesisAccount struct {

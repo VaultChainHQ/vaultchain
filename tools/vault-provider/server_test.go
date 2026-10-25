@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vaultchain/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
 )
 
 const provAddr = "vault1provider"

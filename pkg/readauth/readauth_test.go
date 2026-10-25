@@ -9,7 +9,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
 )
 
 const root = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	vtypes "github.com/vaultchain/vaultchain/types"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
 )
 
 func cmdQuery() *cobra.Command {

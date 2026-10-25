@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	"github.com/vaultchain/vaultchain/pkg/readauth"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	"github.com/VaultChainHQ/vaultchain/pkg/readauth"
 )
 
 // cmdReadToken prints a short-lived bearer token that lets the --from key read

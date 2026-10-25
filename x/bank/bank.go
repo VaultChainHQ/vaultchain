@@ -5,8 +5,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/vaultchain/vaultchain/kv"
-	vtypes "github.com/vaultchain/vaultchain/types"
+	"github.com/VaultChainHQ/vaultchain/kv"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
 )
 
 const ModuleEscrow = "vaultchain-storage-escrow"

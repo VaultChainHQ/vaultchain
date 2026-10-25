@@ -17,10 +17,10 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	"github.com/vaultchain/vaultchain/node"
-	"github.com/vaultchain/vaultchain/x/access"
-	"github.com/vaultchain/vaultchain/x/storage"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	"github.com/VaultChainHQ/vaultchain/node"
+	"github.com/VaultChainHQ/vaultchain/x/access"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 // Client talks to one node's REST endpoint.

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vaultchain/vaultchain/pkg/chunk"
-	"github.com/vaultchain/vaultchain/pkg/readauth"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/pkg/readauth"
 )
 
 // complete reports whether the whole object for m is stored (and readable) here.

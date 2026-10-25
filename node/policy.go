@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vaultchain/vaultchain/x/ibc"
+	"github.com/VaultChainHQ/vaultchain/x/ibc"
 )
 
 // AdminTokenHeader carries the node admin secret on REST tx submission.

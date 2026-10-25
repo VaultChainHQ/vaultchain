@@ -8,10 +8,10 @@ import (
 	"io"
 	"os"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	"github.com/vaultchain/vaultchain/pkg/chunk"
-	"github.com/vaultchain/vaultchain/pkg/vaultcrypt"
-	"github.com/vaultchain/vaultchain/x/storage"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/pkg/vaultcrypt"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 // ErrPlaintext is returned when a key is requested for an unencrypted object.

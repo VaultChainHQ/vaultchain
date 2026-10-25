@@ -13,8 +13,8 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/vaultchain/vaultchain/kv"
-	"github.com/vaultchain/vaultchain/x/bank"
+	"github.com/VaultChainHQ/vaultchain/kv"
+	"github.com/VaultChainHQ/vaultchain/x/bank"
 )
 
 type Config struct {

@@ -25,7 +25,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
 )
 
 func main() {

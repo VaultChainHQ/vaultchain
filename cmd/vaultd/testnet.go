@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/vaultchain/vaultchain/node"
-	vtypes "github.com/vaultchain/vaultchain/types"
+	"github.com/VaultChainHQ/vaultchain/node"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
 )
 
 // cmdTestnet generates the files for an N-validator CometBFT network: one home

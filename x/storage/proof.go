@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/vaultchain/vaultchain/kv"
-	"github.com/vaultchain/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/kv"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
 )
 
 var (

@@ -14,14 +14,14 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	"github.com/vaultchain/vaultchain/node"
-	"github.com/vaultchain/vaultchain/pkg/client"
-	"github.com/vaultchain/vaultchain/pkg/readauth"
-	"github.com/vaultchain/vaultchain/pkg/vaultcrypt"
-	vtypes "github.com/vaultchain/vaultchain/types"
-	"github.com/vaultchain/vaultchain/x/access"
-	"github.com/vaultchain/vaultchain/x/storage"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	"github.com/VaultChainHQ/vaultchain/node"
+	"github.com/VaultChainHQ/vaultchain/pkg/client"
+	"github.com/VaultChainHQ/vaultchain/pkg/readauth"
+	"github.com/VaultChainHQ/vaultchain/pkg/vaultcrypt"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
+	"github.com/VaultChainHQ/vaultchain/x/access"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 func (a acct) record(name string) vcrypto.KeyRecord {

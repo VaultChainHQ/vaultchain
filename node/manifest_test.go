@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vaultchain/vaultchain/kv"
-	"github.com/vaultchain/vaultchain/pkg/chunk"
-	"github.com/vaultchain/vaultchain/x/storage"
+	"github.com/VaultChainHQ/vaultchain/kv"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 func runOne(t *testing.T, app *App, a testAcct, msg any) TxResult {

@@ -5,7 +5,7 @@ Clean-room decentralized storage L1 (local single-validator engine for Phase 0 l
 | | |
 |---|---|
 | Binary | `vaultd` |
-| Module | `github.com/vaultchain/vaultchain` |
+| Module | `github.com/VaultChainHQ/vaultchain` |
 | Bech32 | `vault` |
 | Denom | `uvault` |
 | Local chain-id | `vault-local-1` |

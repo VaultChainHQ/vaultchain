@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
 )
 
 const (

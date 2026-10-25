@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	vtypes "github.com/vaultchain/vaultchain/types"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
 )
 
 func main() {

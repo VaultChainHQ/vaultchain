@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	"github.com/vaultchain/vaultchain/pkg/client"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	"github.com/VaultChainHQ/vaultchain/pkg/client"
 )
 
 // cmdDecrypt decrypts a downloaded ciphertext of an encrypted object.

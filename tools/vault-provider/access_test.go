@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaultchain/vaultchain/pkg/readauth"
+	"github.com/VaultChainHQ/vaultchain/pkg/readauth"
 )
 
 func (e *env) token(a acct, audience, root string, ttl time.Duration) string {

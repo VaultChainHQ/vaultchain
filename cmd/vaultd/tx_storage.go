@@ -14,12 +14,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	"github.com/vaultchain/vaultchain/pkg/chunk"
-	"github.com/vaultchain/vaultchain/pkg/client"
-	"github.com/vaultchain/vaultchain/pkg/readauth"
-	"github.com/vaultchain/vaultchain/x/access"
-	"github.com/vaultchain/vaultchain/x/storage"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/pkg/client"
+	"github.com/VaultChainHQ/vaultchain/pkg/readauth"
+	"github.com/VaultChainHQ/vaultchain/x/access"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 func cmdTxStorage() *cobra.Command {

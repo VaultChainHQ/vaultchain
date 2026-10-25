@@ -7,7 +7,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/types/bech32"
 
-	vtypes "github.com/vaultchain/vaultchain/types"
+	vtypes "github.com/VaultChainHQ/vaultchain/types"
 )
 
 const (

@@ -1,4 +1,4 @@
-module github.com/vaultchain/vaultchain
+module github.com/VaultChainHQ/vaultchain
 
 go 1.25.9
 

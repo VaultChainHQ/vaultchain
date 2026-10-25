@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
 )
 
 func cmdKeys() *cobra.Command {

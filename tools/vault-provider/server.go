@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vaultchain/vaultchain/pkg/chunk"
-	"github.com/vaultchain/vaultchain/x/storage"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 const version = "vault-provider/3"

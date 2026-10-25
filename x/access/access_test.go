@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vaultchain/vaultchain/kv"
+	"github.com/VaultChainHQ/vaultchain/kv"
 )
 
 func TestPublicGrantIsReadOnly(t *testing.T) {

@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vaultchain/vaultchain/kv"
-	"github.com/vaultchain/vaultchain/pkg/chunk"
-	"github.com/vaultchain/vaultchain/pkg/vaultcrypt"
-	"github.com/vaultchain/vaultchain/x/access"
-	"github.com/vaultchain/vaultchain/x/storage"
+	"github.com/VaultChainHQ/vaultchain/kv"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/pkg/vaultcrypt"
+	"github.com/VaultChainHQ/vaultchain/x/access"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 // encryptedManifest encrypts data for owner and returns the commit message.

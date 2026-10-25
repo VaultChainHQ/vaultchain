@@ -9,7 +9,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	"github.com/vaultchain/vaultchain/x/bank"
+	"github.com/VaultChainHQ/vaultchain/x/bank"
 )
 
 // slashDivisor: a failed replica forfeits 1/10 of its provider's collateral to

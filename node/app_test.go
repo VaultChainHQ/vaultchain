@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vaultchain/vaultchain/kv"
-	"github.com/vaultchain/vaultchain/pkg/chunk"
-	"github.com/vaultchain/vaultchain/x/access"
-	"github.com/vaultchain/vaultchain/x/bank"
-	"github.com/vaultchain/vaultchain/x/ibc"
-	"github.com/vaultchain/vaultchain/x/storage"
+	"github.com/VaultChainHQ/vaultchain/kv"
+	"github.com/VaultChainHQ/vaultchain/pkg/chunk"
+	"github.com/VaultChainHQ/vaultchain/x/access"
+	"github.com/VaultChainHQ/vaultchain/x/bank"
+	"github.com/VaultChainHQ/vaultchain/x/ibc"
+	"github.com/VaultChainHQ/vaultchain/x/storage"
 )
 
 const testChain = "c-1"

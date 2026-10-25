@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/vaultchain/vaultchain/kv"
+	"github.com/VaultChainHQ/vaultchain/kv"
 )
 
 const (

@@ -12,9 +12,9 @@ import (
 
 	cmttypes "github.com/cometbft/cometbft/types"
 
-	vcrypto "github.com/vaultchain/vaultchain/crypto"
-	"github.com/vaultchain/vaultchain/kv"
-	"github.com/vaultchain/vaultchain/x/bank"
+	vcrypto "github.com/VaultChainHQ/vaultchain/crypto"
+	"github.com/VaultChainHQ/vaultchain/kv"
+	"github.com/VaultChainHQ/vaultchain/x/bank"
 )
 
 func freePort(t *testing.T) int {
