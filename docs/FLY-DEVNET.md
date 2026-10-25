@@ -22,8 +22,10 @@ the repo (`fly.validator.toml`, `deploy/docker-compose.comet.yml`, `scripts/come
 - Anyone can POST *signed* transactions to the public REST endpoint (that is the
   point of a devnet), but the public REST is hardened: see
   [Public REST: what is and is not exposed](#public-rest-what-is-and-is-not-exposed).
-- Read tokens are bearer credentials. Grants cannot be revoked. Nothing is encrypted
-  at rest on the provider.
+- Read tokens are bearer credentials, but access is re-checked against chain state on every read, so an
+  owner can revoke a grant (`vaultd tx access revoke`) and it takes effect within ~5 s. Files are plaintext at the
+  provider unless the client encrypted them first (`commit-manifest --encrypt`; see
+  [`ENCRYPTION.md`](ENCRYPTION.md)).
 - The provider is a separate process that talks to the node over Fly's private
   network (`vaultl1-devnet.internal`). More providers are more copies of the same
   config under different app names (section 4b).
@@ -85,13 +87,10 @@ renamed the provider app, update `PUBLIC_URL` in `fly.provider.toml` first.
 
 ### 4b. A second (or Nth) provider (optional, not deployed)
 
-Only `vaultl1-provider` is deployed now. `vaultl1-provider-2` and `-3` were used for the replication and repair
-tests and then destroyed (app and volume). Their on-chain registrations on `vault-devnet-1` still exist and
-still show as `active`, because the chain cannot tell that an endpoint went away and their keys died with the
-volumes. Nothing is assigned to them unless a deal selects them, so pin deals to `vaultl1-provider` (the
-e2e script does) and expect a `replication 2` deal to wait for a provider that can no longer answer. To run the
-replication or repair tests again, deploy fresh providers under new names so they register with new keys.
-
+Only `vaultl1-provider` is deployed and registered. `vaultl1-provider-2` and `-3` were used for the replication
+and repair tests on the previous chain and then destroyed. The chain was reset on 2026-10-25 (new genesis, same
+chain id `vault-devnet-1`), so their registrations are gone: `GET /vaultchain/storage/providers` lists exactly one
+provider. To run the replication or repair tests again, deploy fresh providers under new names.
 `fly.provider.toml` carries no app-specific values: the advertised `PUBLIC_URL`
 defaults to `https://$FLY_APP_NAME.fly.dev`, and the volume name is per app. So
 another provider is the same file with `-a`:
@@ -182,8 +181,19 @@ fly ssh console -a vaultl1-devnet
 fly volumes snapshots list <volume-id> -a vaultl1-devnet   # Fly takes daily snapshots
 ```
 
-To reset the chain: destroy the volume and redeploy (all state and keys are lost,
-and the provider must re-register on the new chain, so reset its volume too).
+To reset the chain: stop the machine, destroy the volume, create a new one and redeploy (all state and keys are lost,
+and the validator account is new, so fund every other account again),
+and the provider must re-register on the new chain, so reset its volume too; it then gets a new address and needs
+funding again, section 5). App secrets (`VAULT_ADMIN_TOKEN`) are kept across a volume reset:
+
+```powershell
+fly machine list -a vaultl1-devnet            # note the machine id
+fly machine stop <id> -a vaultl1-devnet
+fly volumes list -a vaultl1-devnet            # note the volume id
+fly volumes destroy <volume-id> -a vaultl1-devnet --yes
+fly volumes create vaultd_data --app vaultl1-devnet --region iad --size 1 --yes
+fly deploy -c fly.devnet.toml --ha=false      # same for vaultl1-provider with fly.provider.toml / provider_data
+```
 
 ## End-to-end test against the live devnet
 
@@ -198,6 +208,24 @@ keys in `~/.vaultl1-e2e`, prints their addresses, and asks you to fund them (sam
 go build -o build/vaultd ./cmd/vaultd
 NODE=https://vaultl1-devnet.fly.dev PROVIDER_URL=https://vaultl1-provider.fly.dev scripts/e2e-remote.sh
 ```
+
+## Revocation and encrypted-file test
+
+`scripts/e2e-private.sh` runs against the same node and provider: it encrypts a file client-side, checks the provider
+stores only ciphertext, decrypts as the owner, rejects tampered and truncated ciphertext, grants bob (wrapping the key
+to his public key), has bob decrypt, then revokes him and checks that the provider refuses his still-valid read token
+and that his key envelope is gone from chain state. `scripts/e2e-remote.sh` also revokes bob's grant and the public
+grant and expects 403 / 401 within seconds.
+
+```bash
+NODE=https://vaultl1-devnet.fly.dev PROVIDER_URL=https://vaultl1-provider.fly.dev scripts/e2e-private.sh
+```
+
+## Local upload UI
+
+[`docs/UI.md`](UI.md): `./build/vault-ui --node https://vaultl1-devnet.fly.dev --provider https://vaultl1-provider.fly.dev
+--home <keyring> --key <name>`, then open http://127.0.0.1:8090. It signs with a local key, binds loopback only and is
+**not** deployed on Fly (and should not be).
 
 ## Replication and failure test
 

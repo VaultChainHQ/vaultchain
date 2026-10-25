@@ -110,6 +110,12 @@ vaultd tx storage buy-capacity 1073741824 10000 uvault --from alice --home ~/.va
 vaultd tx storage commit-manifest ./photo.jpg --from alice --home ~/.vaultchain    # prints the tx; `--dry-run` shows the root
 vaultd tx storage open-deal market <root> 0 <provider-addr> 5000 uvault --from alice --home ~/.vaultchain   # size 0 = manifest size
 
+# Private files (docs/ENCRYPTION.md): encrypt client-side, share a wrapped key, revoke
+vaultd tx storage commit-manifest ./report.pdf --encrypt --cipher-out ./report.pdf.vle --from alice --home ~/.vaultchain
+vaultd tx access grant <root> <bob-addr> read 0 --from alice --home ~/.vaultchain     # wraps the file key for bob
+vaultd decrypt <root> --from bob --node http://127.0.0.1:1317 --in got.vle --out report.pdf --home ~/.vaultchain
+vaultd tx access revoke <root> <bob-addr> --from alice --home ~/.vaultchain          # provider stops serving bob within ~5 s
+
 # Lab-only fake IBC voucher (requires the chain to be initialised with `--lab-mode`)
 vaultd tx ibc-lab mint-voucher $(vaultd keys show alice --home ~/.vaultchain) ibc/ATOM 1000000 --from alice --home ~/.vaultchain
 ```
@@ -126,6 +132,10 @@ vaultd tx ibc-lab mint-voucher $(vaultd keys show alice --home ~/.vaultchain) ib
   what it changed. Tx records are kept for the last 1000 blocks (`GET /vaultchain/txs/<hash>`); headers are kept forever.
 - Details: [`docs/STATE-MACHINE.md`](docs/STATE-MACHINE.md).
 
+**Account public keys are now recorded on chain** (`auth/pubkey/<addr>`, written when an account's first valid tx
+runs; needed to wrap file keys for grantees). It changes the app hash, so a chain created before it must be reset, and
+validators must all run the same version.
+
 **Upgrading from earlier builds: a fresh devnet is required.** The old single-blob `vaultchain.db` and the old
 unsigned txs are not migrated. `vaultd start` refuses to run on a legacy `data/vaultchain.db` and tells you to stop the
 node, delete `<home>/data`, and re-run `vaultd init` (`scripts/init-vault-local.sh` does this for you).
@@ -141,9 +151,12 @@ x/access/              AccessGrant store
 x/bank/                balances + escrow
 x/ibc/                 payments-only policy + lab voucher mint
 crypto/                test keyring (secp256k1)
+pkg/vaultcrypt/        client-side file encryption (XChaCha20-Poly1305 segments) + per-recipient key envelopes
+pkg/client/            Go client for the REST API: sign + send txs, wait, queries, encrypt/decrypt helpers
 pkg/chunk/             chunking, Merkle tree, content root, inclusion proofs
 tools/vault-provider/  object store: verified chunked storage, Range reads, deal-gated writes
 tools/vault-lab/       click-to-test lab UI (:3456)
+tools/vault-ui/        small local upload UI: upload (optionally encrypted), download, grant, revoke (127.0.0.1:8090)
 docs/                  Phase 0 + IBC policy
 scripts/               init + start helpers
 ```
@@ -213,9 +226,21 @@ The reader is allowed if any of these hold:
 
 No token on a non-public object gives `401` (`WWW-Authenticate: Vault`), a valid token without access gives `403`, a
 root with no manifest `404`. Limits: a token is a bearer credential (one in a URL ends up in logs: keep TTLs short);
-there is no grant revocation message yet, so a grant stays until it expires; the 5 s cache only delays that
-further; and a provider that holds the bytes can of course read them, since nothing is encrypted at rest.
-Encryption of private objects is not implemented.
+there is a grant can be withdrawn with `vaultd tx access revoke` (owner-only, see below) and the provider stops serving the
+revoked reader within the 5 s cache window, even with a still-valid token; and a provider that holds the bytes
+can of course read them unless you encrypted the file client-side (`commit-manifest --encrypt`).
+
+### Revocation and encryption
+
+- `vaultd tx access revoke <root> <grantee|*> [--grant-id N]` removes grants (owner only; fails if nothing matches).
+  Providers enforce it at serve time by checking chain state; only positive answers are cached (5 s). It does not
+  cut a response that is already streaming and cannot recall bytes or keys already handed out.
+- `commit-manifest --encrypt` encrypts the file locally (XChaCha20-Poly1305, per-file random key) and commits a
+  manifest over the **ciphertext**; the provider stores and proves ciphertext only. Grants on encrypted objects carry
+  the file key wrapped to the grantee's public key; `vaultd decrypt` opens it. Metadata (name, size, grants) stays public,
+  losing your key loses your data, and a revoked grantee who saved the key can still read their copy. Full threat model
+  and limits: [`docs/ENCRYPTION.md`](docs/ENCRYPTION.md).
+- `tools/vault-ui` is a local-only web UI for all of this: [`docs/UI.md`](docs/UI.md).
 
 Chain REST additions: `GET /vaultchain/storage/manifests[/{root}]` and `deals?cid=&provider=&owner=`.
 Run `./scripts/integration-local.sh` for the full CLI flow, or `go test ./tools/vault-provider` for the same flow

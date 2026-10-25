@@ -100,6 +100,13 @@ run_object() { # name mime
   local c=0
   for _ in $(seq 1 20); do c="$(code -H "Authorization: Vault ${tb}" "${obj}")"; [[ "${c}" == 200 ]] && break; sleep 1; done
   check "${name}: granted reader allowed (200)" [ "${c}" = 200 ]
+  # Revocation: the provider re-checks chain state when it serves (positive decisions are
+  # cached for at most 5s), so a still-valid read token stops working shortly after.
+  check "${name}: revoke bob's grant" tx access revoke "${root}" "${BOB}" --from alice
+  c=0
+  for _ in $(seq 1 20); do c="$(code -H "Authorization: Vault ${tb}" "${obj}")"; [[ "${c}" == 403 ]] && break; sleep 1; done
+  check "${name}: revoked reader refused again (403) with the same token" [ "${c}" = 403 ]
+  check "${name}: owner still allowed after revoking bob" [ "$(code -H "Authorization: Vault ${tok}" "${obj}")" = 200 ]
   check "${name}: anonymous still refused before public grant" [ "$(code "${obj}")" = 401 ]
   check "${name}: public grant (*)" tx access grant "${root}" "*" read 0 --from alice
   c=0
@@ -107,6 +114,10 @@ run_object() { # name mime
   check "${name}: anonymous read allowed after public grant" [ "${c}" = 200 ]
   curl -sf "${obj}" -o "${W}/pub-${name}"
   check "${name}: public download sha256 matches" [ "$(sha256sum <"${f}")" = "$(sha256sum <"${W}/pub-${name}")" ]
+  check "${name}: revoke the public grant" tx access revoke "${root}" "*" --from alice
+  c=0
+  for _ in $(seq 1 20); do c="$(code "${obj}")"; [[ "${c}" == 401 ]] && break; sleep 1; done
+  check "${name}: anonymous refused again after the public grant is revoked (401)" [ "${c}" = 401 ]
 }
 
 run_object note.txt text/plain
