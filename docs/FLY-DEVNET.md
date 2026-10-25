@@ -221,6 +221,8 @@ grant and expects 403 / 401 within seconds.
 NODE=https://vaultl1-devnet.fly.dev PROVIDER_URL=https://vaultl1-provider.fly.dev scripts/e2e-private.sh
 ```
 
+Live results (2026-10-25 12:40 ET, right after the reset, one provider registered): `e2e-remote.sh` 44/44, `e2e-private.sh` 24/24.
+
 ## Local upload UI
 
 [`docs/UI.md`](UI.md): `./build/vault-ui --node https://vaultl1-devnet.fly.dev --provider https://vaultl1-provider.fly.dev
