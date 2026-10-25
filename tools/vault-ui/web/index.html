@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vaultchain files</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>vaultchain files</h1>
+  <div id="info" class="muted">connecting…</div>
+</header>
+
+<main>
+  <section>
+    <h2>Upload</h2>
+    <form id="upload">
+      <input type="file" id="file" required>
+      <label class="inline"><input type="checkbox" id="encrypt"> encrypt before upload (the provider only ever sees ciphertext)</label>
+      <button type="submit" id="go">Upload</button>
+    </form>
+    <div id="status" class="muted" role="status"></div>
+  </section>
+
+  <section>
+    <h2>Files <button id="refresh" type="button">refresh</button></h2>
+    <div id="files" class="muted">loading…</div>
+  </section>
+</main>
+
+<footer class="muted">
+  Local tool: it signs with a key on this machine and only listens on loopback.
+  Names, sizes and who has access are public on chain; only the contents of encrypted files are hidden.
+</footer>
+<script src="/app.js"></script>
+</body>
+</html>
