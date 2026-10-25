@@ -59,6 +59,37 @@ vaultd start --home ~/.vaultchain
 | RPC | `http://127.0.0.1:26657` |
 | REST | `http://127.0.0.1:1317` |
 
+## Multi-validator consensus (CometBFT)
+
+`vaultd start` defaults to the single-node timer engine (`--consensus timer`), which is fine for a local lab. With
+`--consensus comet` the same state machine runs behind CometBFT (v0.39, in-process, ABCI): several validators agree on
+blocks and tx order, every node serves REST from its own committed state, and the app hash is the real hash of that
+state (identical on all nodes at a given height).
+
+- `CheckTx` runs the admission checks (signature, chain id, nonce including this node's pending txs, the node-local
+  `--min-fee`, fee affordability); the HTTP rate limit and admin-token gate still sit in front of REST.
+- `FinalizeBlock`/`Commit` use the same deterministic apply logic as the timer engine. Block time and proposer come
+  from the CometBFT header (block 1's time equals genesis time, so times are clamped to strictly increase by 1 ms).
+  Tx fees go to the proposing validator's account, which genesis maps from its consensus address.
+- Provider proof/challenge/repair logic is unchanged: it reads the committed height, app hash and time.
+- Files per node: `config/cometgenesis.json` (CometBFT genesis; its `app_state` is the vault genesis),
+  `config/priv_validator_key.json`, `config/node_key.json`, `cometdata/` (CometBFT stores) and `data/state.db` (app
+  state). The p2p port is 26656; CometBFT RPC stays on loopback (`--comet-rpc-addr`). `GET /cosmos/base/tendermint/v1beta1/node_info`
+  gains a `consensus` object (engine, node id, peers, validator count, catching up).
+
+```bash
+# 3 validators on this machine (no docker): REST on :1317 :1318 :1319
+go build -o build/vaultd ./cmd/vaultd
+scripts/comet-local.sh start      # also: status | stop [N] | start [N] | clean
+# or with docker
+docker compose -f deploy/docker-compose.comet.yml up --build
+# or generate the files for your own hosts (contains private keys: keep it out of git)
+vaultd testnet --validators 3 --chain-id vault-devnet-2 --out build/testnet --hostname-pattern 'node%d.example'
+```
+
+Validators have equal power (10) fixed at genesis: there is no staking, validator-set change or validator slashing yet.
+The chain id is part of every signed tx; lab mode is a genesis flag and is off in `vaultd testnet` unless `--lab-mode`.
+
 ## Useful commands
 
 ```bash
@@ -211,6 +242,10 @@ message pins the first replica; `-` lets the chain pick all of them. Capacity is
 
 Behaviour change from M6: a market deal with `replication > 1` used to be charged once; payment is now per replica
 for both classes, and `open-deal` no longer requires a provider.
+
+Live repair: `scripts/e2e-repair.sh` needs three providers. It opens a 2-replica deal, stops one replica's machine,
+waits for the chain to fail and replace it with the spare provider (which fetches the bytes from the healthy
+replica, accepts and proves), and checks both downloads. See `docs/FLY-DEVNET.md`.
 
 ## Proof of storage
 

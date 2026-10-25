@@ -1,0 +1,49 @@
+# Local 3-validator CometBFT network. From the repo root:
+#   docker compose -f deploy/docker-compose.comet.yml up --build
+# REST of node1/2/3 is on http://localhost:1317 / 1318 / 1319. `gen` writes the
+# keys and genesis into the "net" volume once (private keys: local use only).
+# Without docker, scripts/comet-local.sh runs the same thing natively.
+x-node: &node
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile.validator
+  entrypoint: ["sh", "-c"]
+  command:
+    - >-
+      exec vaultd start --home /net/node$${N} --consensus comet --moniker node$${N}
+      --api-addr :1317 --block-interval 1s --min-fee 1000uvault
+      --p2p-addr tcp://0.0.0.0:26656 --persistent-peers "$$(cat /net/persistent_peers.txt)"
+  depends_on:
+    gen:
+      condition: service_completed_successfully
+  volumes:
+    - net:/net
+  restart: unless-stopped
+
+services:
+  gen:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.validator
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        [ -f /net/persistent_peers.txt ] || vaultd testnet --validators 3
+        --chain-id vault-composenet-1 --out /net --hostname-pattern node%d --p2p-port 26656
+    volumes:
+      - net:/net
+  node1:
+    <<: *node
+    environment: { N: "1" }
+    ports: ["1317:1317"]
+  node2:
+    <<: *node
+    environment: { N: "2" }
+    ports: ["1318:1317"]
+  node3:
+    <<: *node
+    environment: { N: "3" }
+    ports: ["1319:1317"]
+
+volumes:
+  net:

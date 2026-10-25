@@ -29,6 +29,7 @@ func NewRootCmd() *cobra.Command {
 		cmdInit(),
 		cmdKeys(),
 		cmdStart(),
+		cmdTestnet(),
 		cmdGenesis(),
 		cmdQuery(),
 		cmdTx(),

@@ -1,0 +1,42 @@
+# Fly.io config shared by the multi-validator devnet apps vaultl1-val-1/2/3.
+# Deploy each app from the repo root (the app name comes from -a):
+#   fly deploy -c fly.validator.toml -a vaultl1-val-1 --ha=false
+# Each app needs ONE volume named vaultd_data and its own secrets (see
+# docs/FLY-DEVNET.md). p2p (26656) is reachable only over the private network
+# (<app>.internal); only REST is public.
+app = "vaultl1-val-1"
+primary_region = "iad"
+
+[build]
+  dockerfile = "deploy/Dockerfile.validator"
+
+[env]
+  BLOCK_INTERVAL = "3s"
+
+[[mounts]]
+  source = "vaultd_data"
+  destination = "/data"
+  initial_size = "1gb"
+
+[http_service]
+  internal_port = 1317
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 100
+    hard_limit = 200
+
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "15s"
+    timeout = "5s"
+    method = "GET"
+    path = "/cosmos/base/tendermint/v1beta1/node_info"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	cmttypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/vaultchain/vaultchain/kv"
@@ -36,6 +37,11 @@ type Config struct {
 	// ClientIPHeader names a proxy header holding the real client IP (e.g.
 	// Fly-Client-IP). Only set it behind a proxy that overwrites the header.
 	ClientIPHeader string
+	// Consensus selects the engine: ConsensusTimer (default, single node) or
+	// ConsensusComet (CometBFT, multi-validator).
+	Consensus string
+	// Comet configures the CometBFT node (ConsensusComet only).
+	Comet CometOptions
 }
 
 type Engine struct {
@@ -47,6 +53,8 @@ type Engine struct {
 	pending map[string]uint64 // signer -> next nonce including queued txs
 	genesis *Genesis
 	limiter *rateLimiter
+	abci    *ABCIApp    // ConsensusComet only
+	comet   *cometState // ConsensusComet only, set once started
 }
 
 // DBFile is the state database inside <home>/data.
@@ -69,6 +77,15 @@ func NewEngine(cfg Config) (*Engine, error) {
 				"so a fresh devnet is required (stop the node, delete %s and re-run `vaultd init`)",
 				filepath.Join(dataDir, legacyDBFile), dataDir)
 		}
+	}
+	if cfg.Consensus == "" {
+		cfg.Consensus = ConsensusTimer
+	}
+	if cfg.Consensus != ConsensusTimer && cfg.Consensus != ConsensusComet {
+		return nil, fmt.Errorf("unknown consensus %q (want %s or %s)", cfg.Consensus, ConsensusTimer, ConsensusComet)
+	}
+	if cfg.Consensus == ConsensusComet {
+		return newCometEngine(cfg, dataDir)
 	}
 	g, err := LoadGenesis(cfg.Home)
 	if err != nil {
@@ -95,6 +112,29 @@ func NewEngine(cfg Config) (*Engine, error) {
 	return e, nil
 }
 
+// newCometEngine opens the app state without initialising it: CometBFT calls
+// InitChain with the genesis app_state on first start.
+func newCometEngine(cfg Config, dataDir string) (*Engine, error) {
+	doc, err := cmttypes.GenesisDocFromFile(filepath.Join(cfg.Home, filepath.FromSlash(CometGenesisFile)))
+	if err != nil {
+		return nil, fmt.Errorf("load comet genesis: %w", err)
+	}
+	db, err := kv.OpenBolt(filepath.Join(dataDir, DBFile))
+	if err != nil {
+		return nil, err
+	}
+	app := NewApp(db, AppConfig{TxRetention: cfg.TxRetention})
+	if app.Initialized() && app.ChainID() != doc.ChainID {
+		_ = db.Close()
+		return nil, fmt.Errorf("genesis chain_id %q does not match database chain_id %q", doc.ChainID, app.ChainID())
+	}
+	e := &Engine{cfg: cfg, db: db, app: app, abci: NewABCIApp(app, cfg.MinFee), pending: map[string]uint64{}}
+	if cfg.TxRatePerMin > 0 {
+		e.limiter = newRateLimiter(cfg.TxRatePerMin)
+	}
+	return e, nil
+}
+
 func (e *Engine) Close() error { return e.db.Close() }
 
 // App exposes the state machine (for tests and tooling).
@@ -105,6 +145,9 @@ const maxMempool = 10000
 // SubmitTx runs CheckTx-style validation (structure, signature, chain id,
 // nonce against committed+pending state, fee affordability) and queues the tx.
 func (e *Engine) SubmitTx(raw json.RawMessage) (string, error) {
+	if e.abci != nil {
+		return e.submitComet(raw)
+	}
 	dt, err := DecodeTx(raw)
 	if err != nil {
 		return "", err
@@ -146,6 +189,9 @@ func (e *Engine) SubmitTx(raw json.RawMessage) (string, error) {
 // AccountNonces returns the committed next nonce and the next nonce to use
 // once all queued txs are included.
 func (e *Engine) AccountNonces(addr string) (nonce, pending uint64) {
+	if e.abci != nil {
+		return e.app.Nonce(addr), e.abci.PendingNonce(addr)
+	}
 	e.mpMu.Lock()
 	defer e.mpMu.Unlock()
 	nonce = e.app.Nonce(addr)
@@ -157,6 +203,9 @@ func (e *Engine) AccountNonces(addr string) (nonce, pending uint64) {
 }
 
 func (e *Engine) Run(ctx context.Context) error {
+	if e.abci != nil {
+		return e.runComet(ctx)
+	}
 	rpcErr := make(chan error, 1)
 	restErr := make(chan error, 1)
 	go func() { rpcErr <- e.serveRPC(ctx) }()

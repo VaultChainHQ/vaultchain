@@ -16,6 +16,8 @@ import (
 
 func cmdStart() *cobra.Command {
 	var rpcAddr, restAddr, minFeeStr, clientIPHeader string
+	var consensus string
+	var comet node.CometOptions
 	var txRate int
 	var interval time.Duration
 	cmd := &cobra.Command{
@@ -38,6 +40,8 @@ func cmdStart() *cobra.Command {
 				MinFee:         minFee.Sort(),
 				TxRatePerMin:   txRate,
 				ClientIPHeader: clientIPHeader,
+				Consensus:      consensus,
+				Comet:          comet,
 			})
 			if err != nil {
 				return err
@@ -54,7 +58,14 @@ func cmdStart() *cobra.Command {
 	cmd.Flags().StringVar(&minFeeStr, "min-fee", "", "minimum tx fee this node admits to its mempool, e.g. 1000uvault (empty: none)")
 	cmd.Flags().IntVar(&txRate, "tx-rate", 0, "max POST /vaultchain/txs per client IP per minute from public addresses (0: unlimited)")
 	cmd.Flags().StringVar(&clientIPHeader, "client-ip-header", "", "trusted proxy header with the real client IP, e.g. Fly-Client-IP")
-	cmd.Flags().DurationVar(&interval, "block-interval", 2*time.Second, "block production interval")
+	cmd.Flags().DurationVar(&interval, "block-interval", 2*time.Second, "block production interval (timer engine) / CometBFT timeout_commit")
+	cmd.Flags().StringVar(&consensus, "consensus", node.ConsensusTimer, "consensus engine: timer (single node, default) or comet (CometBFT multi-validator)")
+	cmd.Flags().StringVar(&comet.Moniker, "moniker", "", "comet: node moniker")
+	cmd.Flags().StringVar(&comet.P2PAddr, "p2p-addr", "tcp://0.0.0.0:26656", "comet: p2p listen address")
+	cmd.Flags().StringVar(&comet.PersistentPeers, "persistent-peers", "", "comet: comma separated id@host:port peers")
+	cmd.Flags().StringVar(&comet.ExternalAddr, "external-addr", "", "comet: address advertised to peers")
+	cmd.Flags().StringVar(&comet.RPCAddr, "comet-rpc-addr", "tcp://127.0.0.1:26657", "comet: CometBFT RPC listen address")
+	cmd.Flags().StringVar(&comet.LogLevel, "comet-log-level", "error", "comet: log level (debug, info, warn, error)")
 	return cmd
 }
 

@@ -1,0 +1,21 @@
+# vaultl1 multi-validator node (CometBFT consensus). Build from the repo root:
+#   docker build -f deploy/Dockerfile.validator -t vaultl1-validator .
+# Key material is NOT in the image: the entrypoint writes it from environment
+# secrets (Fly) onto the volume on boot. See docs/FLY-DEVNET.md.
+FROM golang:1.25-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/vaultd ./cmd/vaultd
+
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates curl su-exec \
+ && adduser -D -u 10001 vault \
+ && mkdir -p /data && chown vault:vault /data
+COPY --from=build /out/vaultd /usr/local/bin/vaultd
+COPY deploy/validator-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+# 1317 REST (public), 26656 p2p (private network only). CometBFT RPC stays on loopback.
+EXPOSE 1317 26656
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

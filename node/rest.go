@@ -111,6 +111,7 @@ func (e *Engine) restNodeInfo(w http.ResponseWriter, r *http.Request) {
 			"moniker": "vaultchain-local",
 			"version": "0.1.0",
 		},
+		"consensus": e.consensusInfo(),
 		"application_version": map[string]any{
 			"name":     "vaultchain",
 			"app_name": "vaultd",

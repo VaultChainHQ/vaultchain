@@ -1,8 +1,9 @@
 # Running the vaultl1 devnet on Fly.io
 
-This deploys **one chain node** (`vaultl1-devnet`) and **two storage providers**
-(`vaultl1-provider`, `vaultl1-provider-2`). All are tiny Fly machines with their own
-1 GB volume.
+This deploys **one chain node** (`vaultl1-devnet`) and **three storage providers**
+(`vaultl1-provider`, `vaultl1-provider-2`, `vaultl1-provider-3`). All are tiny Fly machines
+with their own 1 GB volume. A separate multi-validator CometBFT network can be deployed next to
+it (`vaultl1-val-1/2/3`, see [Multi-validator devnet](#multi-validator-devnet-vaultl1-val-123)).
 
 ## What this is (and is not)
 
@@ -204,8 +205,17 @@ FLY=fly FAILURE_TEST=1 scripts/e2e-replication.sh
 
 Repair needs a *third* eligible provider: a failed provider is excluded from its own
 deal, so with only two providers the empty slot stays empty and the chain retries
-every epoch. Add a provider (section 4b) to see reassignment live; it is covered by
-unit tests either way.
+every epoch. With `vaultl1-provider-3` deployed, `scripts/e2e-repair.sh` shows reassignment live:
+
+```bash
+FLY=fly PROVIDER_URLS="https://vaultl1-provider.fly.dev https://vaultl1-provider-2.fly.dev https://vaultl1-provider-3.fly.dev" \
+  scripts/e2e-repair.sh
+```
+
+It opens a deal with 2 replicas, stops one replica's machine (whichever the chain picked), waits for
+that slot to fail (3 missed epochs, about 2 minutes) and be reassigned to the spare, which fetches the
+bytes from the healthy replica, accepts and proves; then both downloads must match the original hash.
+The victim is always started again on exit. (Last live run: 15/15 checks passed.)
 
 ## Size and cost
 

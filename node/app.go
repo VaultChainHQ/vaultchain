@@ -149,6 +149,16 @@ func (a *App) InitChain(g *Genesis) error {
 	}
 	storage.NewKeeper(c).SetParams(g.Storage)
 	ibc.NewKeeper(c).SetLabMode(g.LabMode)
+	for _, v := range g.Validators {
+		addr, err := ValidatorAddress(v.PubKey)
+		if err != nil {
+			return fmt.Errorf("genesis validator %q: %w", v.Name, err)
+		}
+		if err := vtypes.ValidateAddress(v.Account); err != nil {
+			return fmt.Errorf("genesis validator %q account: %w", v.Name, err)
+		}
+		c.Set(valKey(addr), []byte(v.Account))
+	}
 	c.Set(keyChainID, []byte(g.ChainID))
 	kv.SetU64(c, keyHeight, 0)
 	gt := normTime(g.GenesisTime)
@@ -173,6 +183,13 @@ func (c execCtx) feeRecipient() string {
 	}
 	return bank.FeeCollector
 }
+
+// valKey maps a consensus address (hex, as in block headers) to the fee account.
+func valKey(consAddr string) []byte { return []byte("_meta/val/" + consAddr) }
+
+// ProposerAccount is the fee account of the validator with the given consensus
+// address (hex), or "" if it is not in the genesis set.
+func (a *App) ProposerAccount(consAddr string) string { return string(a.db.Get(valKey(consAddr))) }
 
 func nonceKey(addr string) []byte { return kv.K("auth", "nonce", addr) }
 
@@ -202,6 +219,26 @@ func blockKey(h int64) []byte {
 //     errors (or panics) the whole branch is discarded, so a failed tx leaves
 //     no partial effects beyond fee and nonce.
 func (a *App) ExecuteBlock(in BlockInput) (*BlockResult, error) {
+	pb, err := a.PrepareBlock(in)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.CommitBlock(pb); err != nil {
+		return nil, err
+	}
+	return pb.Result, nil
+}
+
+// PendingBlock is a fully executed block that has not been written yet. A
+// consensus engine executes in FinalizeBlock (it needs the app hash) and
+// commits in Commit; CommitBlock writes it atomically.
+type PendingBlock struct {
+	Result *BlockResult
+	ops    []kv.Op
+}
+
+// PrepareBlock executes in against committed state without writing anything.
+func (a *App) PrepareBlock(in BlockInput) (*PendingBlock, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.Initialized() {
@@ -252,10 +289,18 @@ func (a *App) ExecuteBlock(in BlockInput) (*BlockResult, error) {
 	kv.SetU64(bc, keyHeight, uint64(in.Height))
 	putTime(bc, keyBlockTime, in.Time)
 	a.pruneTxs(bc, in.Height)
-	if err := a.db.Commit(bc.Ops()); err != nil {
-		return nil, err
+	return &PendingBlock{Result: &BlockResult{Header: hdr, Results: results}, ops: bc.Ops()}, nil
+}
+
+// CommitBlock durably writes a block returned by PrepareBlock. It must be the
+// next block (no other block committed since it was prepared).
+func (a *App) CommitBlock(pb *PendingBlock) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if want := a.Height() + 1; pb.Result.Header.Height != want {
+		return fmt.Errorf("commit height %d, expected %d", pb.Result.Header.Height, want)
 	}
-	return &BlockResult{Header: hdr, Results: results}, nil
+	return a.db.Commit(pb.ops)
 }
 
 func (a *App) recordTx(bc *kv.Cache, height int64, i int, raw []byte, res TxResult) {
