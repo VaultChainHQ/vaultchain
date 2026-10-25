@@ -7,9 +7,11 @@ it (`vaultl1-val-1/2/3`, see [Multi-validator devnet](#multi-validator-devnet-va
 
 ## What this is (and is not)
 
-- It is a **devnet**, not a decentralized network. The node is a single validator
-  that produces a block every `BLOCK_INTERVAL` (3s) on a timer. There is **no
-  multi-validator consensus**, no staking, no peer networking.
+- It is a **devnet**, not a decentralized network. The `vaultl1-devnet` node is a single validator
+  that produces a block every `BLOCK_INTERVAL` (3s) on a timer: no multi-validator consensus, no
+  staking, no peer networking. (The separate CometBFT network `vaultl1-val-1/2/3` does run
+  multi-validator consensus; see [Multi-validator devnet](#multi-validator-devnet-vaultl1-val-123).
+  It has no staking either.)
 - If the node's volume is lost, the chain is lost. Single machine, no HA.
 - Anyone can POST *signed* transactions to the public REST endpoint (that is the
   point of a devnet), but the public REST is hardened: see
@@ -20,10 +22,8 @@ it (`vaultl1-val-1/2/3`, see [Multi-validator devnet](#multi-validator-devnet-va
   network (`vaultl1-devnet.internal`). More providers are more copies of the same
   config under different app names (section 4b).
 
-What real consensus would still need: a multi-validator BFT engine (for example
-CometBFT) wired to the state machine, a validator set with staking and slashing for
-validators, p2p networking and state sync, and a real fee market. None of that is
-in this repo yet.
+What real consensus would still need beyond the CometBFT mode: a validator set with staking and
+slashing (the set and powers are fixed at genesis), state sync for new nodes, and a real fee market.
 
 ## 1. Install flyctl and log in
 
@@ -217,6 +217,75 @@ that slot to fail (3 missed epochs, about 2 minutes) and be reassigned to the sp
 bytes from the healthy replica, accepts and proves; then both downloads must match the original hash.
 The victim is always started again on exit. (Last live run: 15/15 checks passed.)
 
+## Multi-validator devnet (vaultl1-val-1/2/3)
+
+Three more apps run the same state machine behind CometBFT (`--consensus comet`, chain id
+`vault-devnet-2`, lab mode off), next to the old single-node `vaultl1-devnet`, which keeps
+running unchanged. Each validator is one `shared-cpu-1x` / 256 MB machine with its own 1 GB volume
+(`vaultd_data`). p2p (26656) is IPv6 6PN only (`<app>.internal`); only REST is public:
+`https://vaultl1-val-1.fly.dev`, `-val-2`, `-val-3`. Config: `fly.validator.toml` (generic, the app
+name comes from `-a`) and `deploy/Dockerfile.validator`.
+
+**Fault tolerance: 3 equal validators tolerate zero failures.** CometBFT needs strictly more than 2/3 of
+the voting power to commit. With 3 x 10 power, two validators hold exactly 2/3, so stopping one
+validator halts the chain until it returns (verified live: the chain stalled at the same height on the two
+survivors and resumed within seconds after the machine started). Tolerating one failed validator needs at
+least 4 equal validators (verified locally with 4: one stopped, the other three kept producing blocks, the
+restarted one caught up). The validator set is fixed at genesis, so going from 3 to 4 means generating a
+new genesis and a new chain.
+
+**Keys and files.** The network is generated once, offline, on your machine. The output contains private
+keys, so keep it out of git:
+
+```bash
+vaultd testnet --validators 3 --chain-id vault-devnet-2 --out ~/.vaultl1-val-net \
+  --hostname-pattern 'vaultl1-val-%d.internal'
+```
+
+For each `nodeN` there are four secrets, set per app as base64 (names only; never print the values):
+`COMET_GENESIS_B64` (`config/cometgenesis.json`, not secret), `COMET_PRIV_VALIDATOR_KEY_B64`
+(`config/priv_validator_key.json`), `COMET_NODE_KEY_B64` (`config/node_key.json`), `VAULT_KEYRING_B64`
+(`keyring-test/keys.json`, the validator's fee account), plus `PERSISTENT_PEERS` (the other two
+`id@vaultl1-val-M.internal:26656`, from `nodeN/persistent_peers.txt`). `deploy/validator-entrypoint.sh`
+writes these files on every boot, never touches `priv_validator_state.json` (double-sign protection),
+and fails if a file is missing. A peer whose `.internal` name does not resolve yet is skipped for that boot;
+it dials in instead.
+
+```bash
+for N in 1 2 3; do
+  fly apps create vaultl1-val-$N
+  fly volumes create vaultd_data -a vaultl1-val-$N -r iad -n 1 -y
+  # build an .env file (NAME=value lines, no BOM) with the five secrets, then:
+  fly secrets import -a vaultl1-val-$N --stage < val-$N.env
+  fly deploy -c fly.validator.toml -a vaultl1-val-$N --ha=false
+done
+```
+
+**Checks.** `GET /cosmos/base/tendermint/v1beta1/node_info` has a `consensus` object (height, peers,
+validators, catching_up). All three validators must report the same height (+-1), 2 peers and 3
+validators. To compare app hashes at one height:
+`fly ssh console -a vaultl1-val-1 -C "curl -s 'http://127.0.0.1:26657/block?height=22'"` (the `app_hash` in the
+header must match on every node). A signed `bank-send` submitted to one node must show up in the balances
+of all three.
+
+**Live results (2026-10-25).** 3 validators at equal heights with equal app hashes at height 22; a tx sent to
+`val-1` visible on all three; `scripts/e2e-remote.sh` 34/34 and `scripts/e2e-replication.sh` 11/11 against
+`https://vaultl1-val-1.fly.dev` with two providers run locally (in a container) and registered on the new
+chain; one validator stopped = chain halted, started again = chain resumed and all three
+agree. Memory: about 100 MB of the 256 MB is still available per machine; `/data` was about 15 MB after the first hour.
+A request to the public REST name of a stopped validator wakes its machine (`auto_start_machines`), so
+poll the other validators or `fly machine status` while testing an outage.
+
+**Providers.** The three Fly providers still point at `vaultl1-devnet` (chain `vault-devnet-1`). A provider
+follows exactly one chain, so pointing it at `vault-devnet-2` means setting `DEVNET_REST` and `CHAIN_ID` for
+its app, funding its account on the new chain and letting it register again. Do that deliberately: the old
+devnet would then have no providers. The new chain currently has leftover test providers (from the
+verification runs, registered with `127.0.0.1` endpoints) that are not reachable; reset the chain (new
+volumes, or a new chain id) before using it for real.
+
+**Cost.** Each validator is about the price of one provider (a small machine plus a 1 GB volume, roughly
+USD 2 to 3 per month at current Fly pricing, check the pricing page): about USD 6 to 9 per month for the three. The
+old devnet can be retired once the providers have moved (not done; deleting is a separate decision).
 ## Size and cost
 
 All three apps use `shared-cpu-1x` with 256 MB RAM and a 1 GB volume, one machine
@@ -227,6 +296,6 @@ must keep producing blocks.
 
 ## CI
 
-`.github/workflows/ci.yml` runs gofmt, build, vet and test, and builds both images
+`.github/workflows/ci.yml` runs gofmt, build, vet and test, and builds the devnet, provider and validator images
 without pushing, on `actions/checkout@v6` and `actions/setup-go@v6` (Node 24). It does
 not deploy.

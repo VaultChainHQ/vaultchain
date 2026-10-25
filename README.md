@@ -88,6 +88,9 @@ vaultd testnet --validators 3 --chain-id vault-devnet-2 --out build/testnet --ho
 ```
 
 Validators have equal power (10) fixed at genesis: there is no staking, validator-set change or validator slashing yet.
+CometBFT commits only with strictly more than 2/3 of the power, so 3 equal validators tolerate no failure (stop one and
+the chain halts until it returns); 4 tolerate one. A live 3-validator devnet runs on Fly (`fly.validator.toml`,
+`deploy/Dockerfile.validator`, `vaultl1-val-1/2/3`; see docs/FLY-DEVNET.md).
 The chain id is part of every signed tx; lab mode is a genesis flag and is off in `vaultd testnet` unless `--lab-mode`.
 
 ## Useful commands
@@ -262,6 +265,6 @@ every `-prove-interval`, default 3 s; each tx pays the fee). By hand: `vaultd tx
 `vaultd tx storage submit-proof <deal_id> --provider-url http://127.0.0.1:3333 --from provider`.
 
 Limits (honest): the seed is the public app hash (a proposer can grind it and a provider learns its challenge one
-block ahead), there is no real multi-validator consensus, a proof only shows the provider held that one chunk in that
+block ahead), the multi-validator mode has a fixed validator set (no staking), a proof only shows the provider held that one chunk in that
 epoch (assurance grows with epochs), there is no cap on repair attempts, and replica selection ignores locality,
 price and reputation. This is lab-grade storage assurance, not production.

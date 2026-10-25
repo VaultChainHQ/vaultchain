@@ -4,11 +4,13 @@
 # secrets and this script writes them to the volume. Nothing secret is baked
 # into the image or committed to git, and nothing is printed.
 #
-#   COMET_GENESIS            config/cometgenesis.json (shared, not secret)
-#   COMET_PRIV_VALIDATOR_KEY config/priv_validator_key.json (SECRET: consensus key)
-#   COMET_NODE_KEY           config/node_key.json (p2p identity)
-#   VAULT_KEYRING            keyring-test/keys.json (SECRET: the validator's fee account)
-#   PERSISTENT_PEERS         id@host:port,... (the other validators)
+# Files arrive base64-encoded (so no quoting or newline problems in `fly secrets`):
+#   COMET_GENESIS_B64            config/cometgenesis.json (shared, not secret)
+#   COMET_PRIV_VALIDATOR_KEY_B64 config/priv_validator_key.json (SECRET: consensus key)
+#   COMET_NODE_KEY_B64           config/node_key.json (p2p identity)
+#   VAULT_KEYRING_B64            keyring-test/keys.json (SECRET: the validator's fee account)
+# Plain value:
+#   PERSISTENT_PEERS             id@host:port,... (the other validators)
 set -eu
 
 HOME_DIR="${VAULTD_HOME:-/data/vaultd}"
@@ -35,12 +37,12 @@ mkdir -p "$HOME_DIR/config" "$HOME_DIR/keyring-test" "$HOME_DIR/cometdata" "$HOM
 # is never touched: it holds the double-sign protection state.
 put() { # put ENV_VAR_NAME destination
   eval "val=\${$1:-}"
-  if [ -n "$val" ]; then printf '%s\n' "$val" >"$2"; fi
+  if [ -n "$val" ]; then printf '%s' "$val" | base64 -d >"$2"; fi
 }
-put COMET_GENESIS "$HOME_DIR/config/cometgenesis.json"
-put COMET_PRIV_VALIDATOR_KEY "$HOME_DIR/config/priv_validator_key.json"
-put COMET_NODE_KEY "$HOME_DIR/config/node_key.json"
-put VAULT_KEYRING "$HOME_DIR/keyring-test/keys.json"
+put COMET_GENESIS_B64 "$HOME_DIR/config/cometgenesis.json"
+put COMET_PRIV_VALIDATOR_KEY_B64 "$HOME_DIR/config/priv_validator_key.json"
+put COMET_NODE_KEY_B64 "$HOME_DIR/config/node_key.json"
+put VAULT_KEYRING_B64 "$HOME_DIR/keyring-test/keys.json"
 for f in config/cometgenesis.json config/priv_validator_key.json config/node_key.json keyring-test/keys.json; do
   [ -s "$HOME_DIR/$f" ] || { echo "missing $f: set its secret or pre-populate the volume" >&2; exit 1; }
 done

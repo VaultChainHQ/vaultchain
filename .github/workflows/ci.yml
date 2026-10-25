@@ -32,3 +32,5 @@ jobs:
         run: docker build -f deploy/Dockerfile.devnet -t vaultl1-devnet:ci .
       - name: build provider image (no push)
         run: docker build -f deploy/Dockerfile.provider -t vaultl1-provider:ci .
+      - name: build validator image (no push)
+        run: docker build -f deploy/Dockerfile.validator -t vaultl1-validator:ci .
