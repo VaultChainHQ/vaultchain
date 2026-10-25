@@ -125,8 +125,16 @@ func DecodeMsg(raw json.RawMessage) (any, error) {
 		if err := strictUnmarshal(raw, &m); err != nil {
 			return nil, fmt.Errorf("%s: %w", head.Type, err)
 		}
-		if err := vtypes.ValidateAddress(m.Provider); err != nil {
-			return nil, err
+		if m.Provider != "" {
+			if err := vtypes.ValidateAddress(m.Provider); err != nil {
+				return nil, err
+			}
+		}
+		return m, nil
+	case storage.MsgTypeAcceptDeal:
+		var m storage.MsgAcceptDeal
+		if err := strictUnmarshal(raw, &m); err != nil {
+			return nil, fmt.Errorf("%s: %w", head.Type, err)
 		}
 		return m, nil
 	case storage.MsgTypeSubmitProof:
@@ -306,6 +314,9 @@ func withSigner(m any, signer string) any {
 		v.From = signer
 		return v
 	case storage.MsgSubmitProof:
+		v.From = signer
+		return v
+	case storage.MsgAcceptDeal:
 		v.From = signer
 		return v
 	case access.MsgGrantAccess:

@@ -26,6 +26,17 @@ type Params struct {
 	// MaxMissedProofs is how many consecutive challenge epochs a provider may
 	// skip before the deal fails (0 = default 3).
 	MaxMissedProofs uint32 `json:"max_missed_proofs"`
+	// AcceptTimeoutBlocks is how long assigned providers have to accept a deal
+	// (0 = default 20).
+	AcceptTimeoutBlocks int64 `json:"accept_timeout_blocks"`
+}
+
+// AcceptTimeout returns the effective accept window in blocks.
+func (p Params) AcceptTimeout() int64 {
+	if p.AcceptTimeoutBlocks <= 0 {
+		return 20
+	}
+	return p.AcceptTimeoutBlocks
 }
 
 // MaxMissed returns the effective consecutive-miss limit.
@@ -52,6 +63,7 @@ func DefaultParams() Params {
 		BlockInterval:         10,
 		MaxObjectBytes:        4 << 30, // 4 GiB
 		MaxMissedProofs:       3,
+		AcceptTimeoutBlocks:   20,
 	}
 }
 
@@ -83,22 +95,94 @@ type CapacityPlan struct {
 	Payment   sdk.Coin `json:"payment"`
 }
 
-type Deal struct {
-	ID           uint64   `json:"id"`
-	Class        string   `json:"class"` // market | archive
-	Owner        string   `json:"owner"`
-	Provider     string   `json:"provider"`
-	CID          string   `json:"cid"`
-	Size         uint64   `json:"size"`
-	StartH       int64    `json:"start_height"`
-	ExpireH      int64    `json:"expire_height"`
-	Payment      sdk.Coin `json:"payment"`
-	Replication  uint32   `json:"replication"`
-	LastProvenH  int64    `json:"last_proven_height"`
-	MissedProofs uint32   `json:"missed_proofs"` // consecutive missed challenge epochs
+// Deal and replica lifecycle.
+//
+// A deal is pending until MinReplicas of its assigned providers accept it
+// (MsgAcceptDeal), then open until ExpireH. A pending deal that cannot reach
+// quorum by the accept deadline is cancelled and refunded.
+const (
+	DealPending   = "pending"
+	DealOpen      = "open"
+	DealClosed    = "closed" // expired; at least one provider was paid
+	DealFailed    = "failed" // expired; nobody was paid
+	DealCancelled = "cancelled"
+
+	ReplicaAssigned = "assigned" // chosen by the chain, has not accepted yet
+	ReplicaActive   = "active"   // accepted; challenged every epoch
+	ReplicaFailed   = "failed"   // missed too many proofs (slashed) or never proved
+	ReplicaDeclined = "declined" // did not accept in time
+	ReplicaDone     = "done"     // served the deal to expiry and was paid
+
+	// MaxReplication bounds the providers assigned to one deal.
+	MaxReplication = 16
+)
+
+// Replica is one provider's obligation for one slot of a deal. A failed or
+// declined replica may be replaced by a new Replica in the same slot.
+type Replica struct {
+	Slot            int    `json:"slot"`
+	Provider        string `json:"provider"`
+	Status          string `json:"status"`
+	AssignedH       int64  `json:"assigned_height"`
+	AcceptDeadlineH int64  `json:"accept_deadline_height"`
+	AcceptedH       int64  `json:"accepted_height"`
+	LastProvenH     int64  `json:"last_proven_height"`
 	// LastProvenEpoch is the epoch (its start height) of the last verified proof.
-	LastProvenEpoch int64  `json:"last_proven_epoch"`
-	Status          string `json:"status"` // open | closed | failed
+	LastProvenEpoch int64 `json:"last_proven_epoch"`
+	// MissedProofs counts consecutive missed challenge epochs.
+	MissedProofs uint32 `json:"missed_proofs"`
+}
+
+// Reserved reports whether the replica still holds provider capacity.
+func (r Replica) Reserved() bool { return r.Status == ReplicaAssigned || r.Status == ReplicaActive }
+
+type Deal struct {
+	ID    uint64 `json:"id"`
+	Class string `json:"class"` // market | archive
+	Owner string `json:"owner"`
+	CID   string `json:"cid"`
+	Size  uint64 `json:"size"`
+	// StartH is the height the deal was opened; ExpireH is StartH + duration.
+	StartH  int64 `json:"start_height"`
+	ExpireH int64 `json:"expire_height"`
+	// Payment is the total escrowed: PerReplica * Replication.
+	Payment     sdk.Coin  `json:"payment"`
+	PerReplica  sdk.Coin  `json:"per_replica_payment"`
+	Replication uint32    `json:"replication"`
+	MinReplicas uint32    `json:"min_replicas"`
+	Replicas    []Replica `json:"replicas"`
+	Status      string    `json:"status"`
+}
+
+// ReplicaIndex returns the index of provider's live (assigned or active)
+// replica in the deal.
+func (d Deal) ReplicaIndex(provider string) (int, bool) {
+	for i, r := range d.Replicas {
+		if r.Provider == provider && r.Reserved() {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// HasProvider reports whether provider has ever held a replica of the deal.
+func (d Deal) HasProvider(provider string) bool {
+	for _, r := range d.Replicas {
+		if r.Provider == provider {
+			return true
+		}
+	}
+	return false
+}
+
+func (d Deal) activeCount() int {
+	n := 0
+	for _, r := range d.Replicas {
+		if r.Status == ReplicaActive {
+			n++
+		}
+	}
+	return n
 }
 
 type Proof struct {

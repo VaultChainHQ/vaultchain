@@ -162,6 +162,7 @@ type execCtx struct {
 	height   int64
 	time     time.Time
 	proposer string
+	seed     string // app hash before this block: deterministic randomness
 }
 
 // feeRecipient: fees go to the block proposer if it is a valid account
@@ -217,7 +218,7 @@ func (a *App) ExecuteBlock(in BlockInput) (*BlockResult, error) {
 	prevApp := a.AppHash()
 
 	bc := kv.NewCache(a.db)
-	ctx := execCtx{chainID: chainID, height: in.Height, time: in.Time, proposer: in.Proposer}
+	ctx := execCtx{chainID: chainID, height: in.Height, time: in.Time, proposer: in.Proposer, seed: prevApp}
 	results := make([]TxResult, 0, len(in.Txs))
 	txsHasher := sha256.New()
 	ok := 0
@@ -356,7 +357,9 @@ func execMsg(s kv.Store, ctx execCtx, m any) error {
 	case storage.MsgBuyCapacity:
 		return sk.BuyCapacity(msg, ctx.height)
 	case storage.MsgOpenDeal:
-		return sk.OpenDeal(msg, ctx.height)
+		return sk.OpenDeal(msg, ctx.height, ctx.seed)
+	case storage.MsgAcceptDeal:
+		return sk.AcceptDeal(msg, ctx.height)
 	case storage.MsgSubmitProof:
 		return sk.SubmitProof(msg, ctx.height)
 	case access.MsgGrantAccess:

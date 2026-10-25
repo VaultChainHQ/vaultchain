@@ -270,6 +270,10 @@ func (l *Lab) handleOpenDeal(w http.ResponseWriter, r *http.Request) {
 		Provider string `json:"provider"`
 		Duration int64  `json:"duration"`
 		Denom    string `json:"denom"`
+		// Replication > 1 asks the chain to assign more providers; the first is
+		// the lab provider unless "provider" is "-" (chain picks all).
+		Replication uint32 `json:"replication"`
+		MinReplicas uint32 `json:"min_replicas"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if !validRoot(body.Root) {
@@ -293,10 +297,16 @@ func (l *Lab) handleOpenDeal(w http.ResponseWriter, r *http.Request) {
 		}
 		body.Provider = addr
 	}
-	out, err := l.runTx(l.Key, "storage", "open-deal",
+	args := []string{"storage", "open-deal",
 		body.Class, body.Root, strconv.FormatUint(body.Size, 10), body.Provider,
-		strconv.FormatInt(body.Duration, 10), body.Denom,
-	)
+		strconv.FormatInt(body.Duration, 10), body.Denom}
+	if body.Replication > 0 {
+		args = append(args, "--replication", strconv.FormatUint(uint64(body.Replication), 10))
+	}
+	if body.MinReplicas > 0 {
+		args = append(args, "--min-replicas", strconv.FormatUint(uint64(body.MinReplicas), 10))
+	}
+	out, err := l.runTx(l.Key, args...)
 	if err != nil {
 		writeErr(w, 500, err)
 		return
@@ -525,7 +535,7 @@ func (l *Lab) manifestOwner(root string) (owner string, found bool, err error) {
 	return r.Manifest.Owner, true, nil
 }
 
-// openDealFor returns the newest open deal for root between owner and provider.
+// openDealFor returns the newest pending or open deal for root between owner and provider.
 func (l *Lab) openDealFor(root, owner, provider string) (uint64, bool, error) {
 	q := url.Values{"cid": {root}, "owner": {owner}, "provider": {provider}}
 	raw, err := l.getJSON(l.REST + "/vaultchain/storage/deals?" + q.Encode())
@@ -543,7 +553,7 @@ func (l *Lab) openDealFor(root, owner, provider string) (uint64, bool, error) {
 	}
 	var id uint64
 	for _, d := range parsed.Deals {
-		if d.Status == "open" && d.ID > id {
+		if (d.Status == "open" || d.Status == "pending") && d.ID > id {
 			id = d.ID
 		}
 	}

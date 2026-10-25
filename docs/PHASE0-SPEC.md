@@ -138,3 +138,5 @@ Inspired by public designs of Jackal (deals/proofs), Filecoin (proving), Arweave
 - [x] IBC payment policy documented and enforced via denom whitelist in storage params
 
 > **Update (M6):** the v1 stub attestation described above was replaced by Merkle chunk challenges with missed-proof tracking, failure/slashing and expiry payout. See README "Proof of storage".
+
+> **Update (M7):** deals are replicated: the chain assigns N providers per deal, they `MsgAcceptDeal`, and proofs, slashing and payment are per replica with repair of failed replicas. See README "Replication".

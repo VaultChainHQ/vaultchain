@@ -54,16 +54,19 @@ DEAL="$(curl -sf "http://${REST}/vaultchain/storage/deals?cid=${ROOT_HEX}" | pyt
 echo "DEAL_ID=${DEAL}"
 curl -sf -X POST --data-binary "@${FILE}" "http://127.0.0.1${PROV_LISTEN}/v1/objects/${ROOT_HEX}" >/dev/null
 echo "uploaded"
-# Wait for the first challenge epoch, then answer it by hand (this provider runs
-# without -home, so it does not prove automatically).
+# This provider runs without -home, so it neither accepts nor proves by itself:
+# accept the assigned deal (pending -> open), then wait for the first challenge
+# epoch and answer it by hand.
+./build/vaultd tx storage accept-deal "${DEAL}" --from provider --home "${HOME_DIR}" --node "${NODE}"
+sleep 1.5
 for _ in $(seq 1 60); do
-  curl -sf "http://${REST}/vaultchain/storage/challenge/${DEAL}" >/dev/null && break
+  curl -sf "http://${REST}/vaultchain/storage/challenge/${DEAL}?provider=${PROV}" >/dev/null && break
   sleep 0.5
 done
-curl -sf "http://${REST}/vaultchain/storage/challenge/${DEAL}"; echo
+curl -sf "http://${REST}/vaultchain/storage/challenge/${DEAL}?provider=${PROV}"; echo
 ./build/vaultd tx storage submit-proof "${DEAL}" --provider-url "http://127.0.0.1${PROV_LISTEN}" --from provider --home "${HOME_DIR}" --node "${NODE}"
 sleep 1.5
-curl -sf "http://${REST}/vaultchain/storage/deals?cid=${ROOT_HEX}" | python3 -c "import sys,json; d=json.load(sys.stdin)['deals'][0]; assert d['last_proven_epoch']>0, d; print('proven in epoch', d['last_proven_epoch'])"
+curl -sf "http://${REST}/vaultchain/storage/deals?cid=${ROOT_HEX}" | python3 -c "import sys,json; d=json.load(sys.stdin)['deals'][0]; r=d['replicas'][0]; assert d['status']=='open' and r['last_proven_epoch']>0, d; print('proven in epoch', r['last_proven_epoch'])"
 ./build/vaultd tx ibc-lab mint-voucher "${ALICE}" ibc/ATOM 1000000 --from alice --home "${HOME_DIR}" --node "${NODE}"
 sleep 1
 

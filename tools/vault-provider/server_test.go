@@ -35,7 +35,7 @@ func (f *fakeChain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"manifest": map[string]any{
 			"root": m.Root, "size": m.Size, "chunk_size": m.ChunkSize, "mime": m.Mime, "name": m.Name}})
 	case r.URL.Path == "/vaultchain/storage/deals":
-		out := []map[string]string{}
+		out := []map[string]any{}
 		for _, d := range f.deals {
 			if c := r.URL.Query().Get("cid"); c != "" && d["cid"] != c {
 				continue
@@ -43,7 +43,9 @@ func (f *fakeChain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if p := r.URL.Query().Get("provider"); p != "" && d["provider"] != p {
 				continue
 			}
-			out = append(out, d)
+			// Real deals list replicas; the fake keeps one provider per deal.
+			out = append(out, map[string]any{"cid": d["cid"], "status": d["status"],
+				"replicas": []map[string]string{{"provider": d["provider"], "status": "active"}}})
 		}
 		json.NewEncoder(w).Encode(map[string]any{"deals": out})
 	default:

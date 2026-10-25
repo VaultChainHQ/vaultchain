@@ -14,6 +14,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/vaultchain/vaultchain/node"
+	"github.com/vaultchain/vaultchain/pkg/chunk"
 	"github.com/vaultchain/vaultchain/x/storage"
 )
 
@@ -30,10 +31,12 @@ type prover struct {
 	fee     sdk.Coins
 	mu      sync.Mutex
 	sentFor map[uint64]int64 // deal -> epoch we last submitted for
+
+	acceptSent map[uint64]time.Time // deal -> when we last sent an accept
 }
 
 func newProver(s *server, key, pubHex string, sign func([]byte) ([]byte, error), fee sdk.Coins) *prover {
-	return &prover{s: s, key: key, pubHex: pubHex, sign: sign, fee: fee, sentFor: map[uint64]int64{}}
+	return &prover{s: s, key: key, pubHex: pubHex, sign: sign, fee: fee, sentFor: map[uint64]int64{}, acceptSent: map[uint64]time.Time{}}
 }
 
 func (p *prover) run(ctx context.Context, every time.Duration) {
@@ -53,7 +56,9 @@ func (p *prover) run(ctx context.Context, every time.Duration) {
 	}
 }
 
-// tick submits a proof for every open deal that has an unanswered challenge.
+// tick walks this provider's deals: it accepts assigned replicas whose object
+// it already holds (fetching it from another active replica first when it is a
+// replacement), and answers the current challenge of its active replicas.
 func (p *prover) tick() (int, error) {
 	var deals struct {
 		Deals []storage.Deal `json:"deals"`
@@ -63,13 +68,27 @@ func (p *prover) tick() (int, error) {
 	}
 	sent := 0
 	for _, d := range deals.Deals {
-		if d.Status != "open" {
+		if d.Status != storage.DealPending && d.Status != storage.DealOpen {
+			continue
+		}
+		ri, ok := d.ReplicaIndex(p.s.addr)
+		if !ok {
+			continue
+		}
+		rep := d.Replicas[ri]
+		if rep.Status == storage.ReplicaAssigned {
+			if p.maybeAccept(d) {
+				sent++
+			}
+			continue
+		}
+		if d.Status != storage.DealOpen {
 			continue
 		}
 		var res struct {
 			Challenge storage.Challenge `json:"challenge"`
 		}
-		code, err := p.s.chainGet(fmt.Sprintf("/vaultchain/storage/challenge/%d", d.ID), &res)
+		code, err := p.s.chainGet(fmt.Sprintf("/vaultchain/storage/challenge/%d?provider=%s", d.ID, p.s.addr), &res)
 		if err != nil {
 			return sent, fmt.Errorf("challenge %d: %w", d.ID, err)
 		}
@@ -78,7 +97,7 @@ func (p *prover) tick() (int, error) {
 		}
 		ch := res.Challenge
 		p.mu.Lock()
-		done := p.sentFor[d.ID] == ch.Epoch || d.LastProvenEpoch == ch.Epoch
+		done := p.sentFor[d.ID] == ch.Epoch || rep.LastProvenEpoch == ch.Epoch
 		p.mu.Unlock()
 		if done {
 			continue
@@ -100,6 +119,59 @@ func (p *prover) tick() (int, error) {
 	return sent, nil
 }
 
+// maybeAccept sends MsgAcceptDeal for an assigned replica once the object is
+// stored locally. A replacement provider (the deal already has active replicas)
+// first copies the object from one of them.
+func (p *prover) maybeAccept(d storage.Deal) bool {
+	p.mu.Lock()
+	last := p.acceptSent[d.ID]
+	p.mu.Unlock()
+	if time.Since(last) < 10*time.Second {
+		return false
+	}
+	m, err := p.s.chainManifest(d.CID)
+	if err != nil {
+		log.Printf("prover: deal %d: manifest: %v", d.ID, err)
+		return false
+	}
+	if !p.s.complete(m) {
+		if !p.repairFetch(d, m) {
+			return false // wait for the owner's upload
+		}
+	}
+	err = p.submit(storage.MsgAcceptDeal{Type: storage.MsgTypeAcceptDeal, DealID: d.ID})
+	p.mu.Lock()
+	p.acceptSent[d.ID] = time.Now()
+	p.mu.Unlock()
+	if err != nil {
+		log.Printf("prover: deal %d: accept: %v", d.ID, err)
+		return false
+	}
+	log.Printf("prover: accepted deal %d", d.ID)
+	return true
+}
+
+// repairFetch copies the object for d from another active replica.
+func (p *prover) repairFetch(d storage.Deal, m chunk.Manifest) bool {
+	for _, r := range d.Replicas {
+		if r.Status != storage.ReplicaActive || r.Provider == p.s.addr {
+			continue
+		}
+		var res struct {
+			Provider storage.Provider `json:"provider"`
+		}
+		if code, err := p.s.chainGet("/vaultchain/storage/providers/"+r.Provider, &res); err != nil || code != http.StatusOK || res.Provider.Endpoint == "" {
+			continue
+		}
+		if err := p.s.fetchObject(res.Provider.Endpoint, m); err != nil {
+			log.Printf("prover: deal %d: fetch from %s: %v", d.ID, r.Provider, err)
+			continue
+		}
+		log.Printf("prover: deal %d: fetched %s from %s", d.ID, m.Root, r.Provider)
+		return true
+	}
+	return false
+}
 func (p *prover) buildProof(ch storage.Challenge) (storage.MsgSubmitProof, error) {
 	m, err := p.s.store.manifest(ch.Root)
 	if err != nil {
@@ -123,7 +195,7 @@ func (p *prover) buildProof(ch storage.Challenge) (storage.MsgSubmitProof, error
 	}, nil
 }
 
-func (p *prover) submit(msg storage.MsgSubmitProof) error {
+func (p *prover) submit(msg any) error {
 	var acct struct {
 		Pending uint64 `json:"pending_nonce"`
 	}

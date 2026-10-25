@@ -12,6 +12,7 @@ const (
 	MsgTypeBuyCapacity      = "storage/BuyCapacity"
 	MsgTypeOpenDeal         = "storage/OpenDeal"
 	MsgTypeSubmitProof      = "storage/SubmitProof"
+	MsgTypeAcceptDeal       = "storage/AcceptDeal"
 )
 
 type MsgRegisterProvider struct {
@@ -31,15 +32,28 @@ type MsgBuyCapacity struct {
 }
 
 type MsgOpenDeal struct {
-	Type        string `json:"type"`
-	From        string `json:"-"`
-	Class       string `json:"class"` // market | archive
-	CID         string `json:"cid"`
-	Size        uint64 `json:"size"`
+	Type  string `json:"type"`
+	From  string `json:"-"`
+	Class string `json:"class"` // market | archive
+	CID   string `json:"cid"`
+	Size  uint64 `json:"size"`
+	// Provider optionally pins the first replica; the rest (or all, if empty)
+	// are chosen deterministically by the chain from active providers.
 	Provider    string `json:"provider"`
 	Duration    int64  `json:"duration_blocks"` // for archive: years*blocksPerYear approximated by caller
 	Denom       string `json:"denom"`
 	Replication uint32 `json:"replication"`
+	// MinReplicas is how many providers must accept for the deal to open
+	// (0 = Replication, i.e. all of them).
+	MinReplicas uint32 `json:"min_replicas"`
+}
+
+// MsgAcceptDeal is sent by an assigned provider to take on its replica; it
+// asserts the provider already holds the object bytes.
+type MsgAcceptDeal struct {
+	Type   string `json:"type"`
+	From   string `json:"-"`
+	DealID uint64 `json:"deal_id"`
 }
 
 type MsgSubmitProof struct {

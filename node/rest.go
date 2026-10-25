@@ -157,7 +157,7 @@ func (e *Engine) restDeals(w http.ResponseWriter, r *http.Request) {
 			if v := q.Get("cid"); v != "" && d.CID != v {
 				continue
 			}
-			if v := q.Get("provider"); v != "" && d.Provider != v {
+			if v := q.Get("provider"); v != "" && !d.HasProvider(v) {
 				continue
 			}
 			if v := q.Get("owner"); v != "" && d.Owner != v {
@@ -274,7 +274,8 @@ func (e *Engine) restTx(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"tx": rec})
 }
 
-// restChallenge returns the current proof challenge for a deal: 404 if the
+// restChallenge returns the current proof challenge for one provider of a deal
+// (/challenge/{deal}?provider=addr): 404 if the
 // deal does not exist, 409 while it is not (yet) challengeable.
 func (e *Engine) restChallenge(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseUint(strings.TrimPrefix(r.URL.Path, "/vaultchain/storage/challenge/"), 10, 64)
@@ -282,8 +283,13 @@ func (e *Engine) restChallenge(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
+	provider := r.URL.Query().Get("provider")
+	if provider == "" {
+		http.Error(w, "provider query parameter required (each replica has its own challenge)", http.StatusBadRequest)
+		return
+	}
 	e.query(w, func(s kv.Store) (any, error) {
-		ch, err := storage.NewKeeper(s).Challenge(id)
+		ch, err := storage.NewKeeper(s).Challenge(id, provider)
 		switch {
 		case errors.Is(err, storage.ErrDealNotFound):
 			return nil, errNotFound

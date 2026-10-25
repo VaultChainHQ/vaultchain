@@ -28,6 +28,7 @@ func cmdTxStorage() *cobra.Command {
 		cmdTxBuyCapacity(),
 		cmdTxCommitManifest(),
 		cmdTxOpenDeal(),
+		cmdTxAcceptDeal(),
 		cmdTxSubmitProof(),
 	)
 	return root
@@ -91,11 +92,15 @@ func cmdTxBuyCapacity() *cobra.Command {
 }
 
 func cmdTxOpenDeal() *cobra.Command {
-	var replication uint32
+	var replication, minReplicas uint32
 	cmd := &cobra.Command{
-		Use:   "open-deal [class] [manifest_root] [size] [provider] [duration_blocks] [denom]",
+		Use:   "open-deal [class] [manifest_root] [size] [provider|-] [duration_blocks] [denom]",
 		Short: "Open market or archive deal for a committed manifest (size 0 = manifest size)",
-		Args:  cobra.ExactArgs(6),
+		Long: `Escrows PerReplica x replication and has the chain assign that many active
+providers, chosen deterministically from the previous block hash. Pass a provider
+address to pin the first replica, or "-" to let the chain choose all of them.
+The deal stays pending until --min-replicas (default: all) providers accept.`,
+		Args: cobra.ExactArgs(6),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			size, err := strconv.ParseUint(args[2], 10, 64)
 			if err != nil {
@@ -105,20 +110,41 @@ func cmdTxOpenDeal() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			provider := args[3]
+			if provider == "-" || provider == "any" {
+				provider = ""
+			}
 			return postTx(cmd, storage.MsgOpenDeal{
 				Type:        storage.MsgTypeOpenDeal,
 				Class:       args[0],
 				CID:         args[1],
 				Size:        size,
-				Provider:    args[3],
+				Provider:    provider,
 				Duration:    dur,
 				Denom:       args[5],
 				Replication: replication,
+				MinReplicas: minReplicas,
 			})
 		},
 	}
-	cmd.Flags().Uint32Var(&replication, "replication", 0, "replication factor (archive default 3)")
+	cmd.Flags().Uint32Var(&replication, "replication", 0, "providers assigned to the deal (default 1; archive default 3)")
+	cmd.Flags().Uint32Var(&minReplicas, "min-replicas", 0, "providers that must accept for the deal to open (default: all)")
 	return cmd
+}
+
+func cmdTxAcceptDeal() *cobra.Command {
+	return &cobra.Command{
+		Use:   "accept-deal [deal_id]",
+		Short: "Accept a deal the chain assigned to --from (the provider must already hold the bytes)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseUint(args[0], 10, 64)
+			if err != nil {
+				return err
+			}
+			return postTx(cmd, storage.MsgAcceptDeal{Type: storage.MsgTypeAcceptDeal, DealID: id})
+		},
+	}
 }
 
 func cmdTxSubmitProof() *cobra.Command {
@@ -126,7 +152,7 @@ func cmdTxSubmitProof() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "submit-proof [deal_id]",
 		Short: "Answer the deal's current chunk challenge (fetches the chunk and Merkle path from the provider)",
-		Long: `Reads the deal's current challenge from the chain, downloads the challenged
+		Long: `Reads the current challenge of the --from provider's replica from the chain, downloads the challenged
 chunk and its Merkle path from --provider-url (GET /v1/chunks/{root}/{i}) and
 submits them as a signed proof. Normally vault-provider does this itself
 (-home/-key); this command is for manual use and debugging.`,
@@ -139,10 +165,14 @@ submits them as a signed proof. Normally vault-provider does this itself
 			if providerURL == "" {
 				return fmt.Errorf("--provider-url required")
 			}
+			self, err := fromAddress(cmd)
+			if err != nil {
+				return err
+			}
 			var res struct {
 				Challenge storage.Challenge `json:"challenge"`
 			}
-			if err := httpGetJSON(fmt.Sprintf("%s/vaultchain/storage/challenge/%d", restBase(cmd), dealID), &res); err != nil {
+			if err := httpGetJSON(fmt.Sprintf("%s/vaultchain/storage/challenge/%d?provider=%s", restBase(cmd), dealID, self), &res); err != nil {
 				return err
 			}
 			ch := res.Challenge

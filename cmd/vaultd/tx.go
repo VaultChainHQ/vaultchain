@@ -159,3 +159,20 @@ func cmdTxIBC() *cobra.Command {
 	})
 	return root
 }
+
+// fromAddress returns the address of the --from key.
+func fromAddress(cmd *cobra.Command) (string, error) {
+	name, _ := cmd.Flags().GetString("from")
+	if name == "" {
+		return "", fmt.Errorf("--from key name required")
+	}
+	kr, err := vcrypto.NewKeyring(homeFlag(cmd))
+	if err != nil {
+		return "", err
+	}
+	rec, err := kr.Get(name)
+	if err != nil {
+		return "", err
+	}
+	return rec.Address, nil
+}

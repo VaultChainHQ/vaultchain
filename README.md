@@ -137,9 +137,11 @@ chunk hashes plus size and chunk size, so the root alone pins the exact bytes.
 
 1. `commit-manifest` publishes `{root, size, chunk_size, mime, name}` on chain. The first committer owns the root
    (note: anyone holding the file can commit it first, so ownership is not proof of authorship).
-2. `open-deal` takes that root (size 0 = manifest size) and only the manifest owner may open it.
-3. The provider accepts bytes only for a root that has an open deal naming that provider (`-address` is required;
-   the old `-skip-chain-check` is gone) and re-verifies the whole object against the root before keeping it.
+2. `open-deal` takes that root (size 0 = manifest size) and only the manifest owner may open it. The chain assigns
+   `replication` providers (see "Replication"); the deal is `pending` until they accept.
+3. The provider accepts bytes only for a root that has a pending or open deal in which it holds an assigned or active
+   replica (`-address` is required; the old `-skip-chain-check` is gone) and re-verifies the whole object against the
+   root before keeping it. Once it holds the bytes its prover sends `MsgAcceptDeal` automatically.
 
 | Provider route | Purpose |
 |----------------|---------|
@@ -159,15 +161,48 @@ Chain REST additions: `GET /vaultchain/storage/manifests[/{root}]` and `deals?ci
 Run `./scripts/integration-local.sh` for the full CLI flow, or `go test ./tools/vault-provider` for the same flow
 against a real in-process engine.
 
+## Replication
+
+`vaultd tx storage open-deal <class> <root> 0 <provider|-> <blocks> uvault --replication N [--min-replicas M]` escrows
+`N x per_replica_payment` (the per-replica price is the same for market and archive; archive defaults to N=3, market
+to N=1) and has the chain **assign N distinct providers**: active providers with enough free bytes, ranked by
+`sha256("vaultchain/assign/v1" || app hash before the block || deal id || address)`. A provider address in the
+message pins the first replica; `-` lets the chain pick all of them. Capacity is reserved on each assigned provider.
+
+- A deal is `pending` until `min_replicas` (default: all) providers send `MsgAcceptDeal` (a provider should only do
+  that once it holds the bytes; `vault-provider` does it automatically). Replicas that do not accept within
+  `accept_timeout_blocks` (default 20, never past the deal expiry) become `declined` and free their capacity. At the
+  deadline the deal opens if quorum was reached; otherwise it is `cancelled` and the whole escrow is refunded.
+- An open deal keeps one `replicas[]` entry per slot with its own status (`assigned`, `active`, `failed`,
+  `declined`, `done`), accept deadline, last proven epoch and missed-proof counter.
+- A replica that misses `max_missed_proofs` consecutive epochs is `failed`: 10% of *its* collateral goes to the owner
+  and its capacity is freed. At the next epoch the chain tries to **repair** the slot by assigning a provider that
+  never held this deal. The replacement must copy the bytes from another active replica (the provider binary does
+  this over HTTP from the endpoint registered on chain, verifying them against the root) and accept. If no provider is
+  eligible the slot stays empty and is retried each epoch; if every replica has failed the deal ends `failed` with a
+  full refund.
+- At expiry every slot's share is paid to its active replica if that replica proved at least once; an empty or
+  unproven slot is refunded to the owner (an accepted-but-never-proved replica is also slashed). The deal is `closed`
+  if anyone was paid, else `failed`.
+
+Behaviour change from M6: a market deal with `replication > 1` used to be charged once; payment is now per replica
+for both classes, and `open-deal` no longer requires a provider.
+
 ## Proof of storage
 
-An open deal is audited with Merkle challenges. Every `proof_interval_blocks` (default 10) a new *epoch* starts, seeded with the app hash before that block. For each open deal the chain derives the challenged chunk index from `sha256("vaultchain/challenge/v1" || seed || deal_id)`; `GET /vaultchain/storage/challenge/{deal_id}` returns it (`404` unknown deal, `409` not challengeable yet: the deal must predate the epoch).
+Every `proof_interval_blocks` (default 10) a new *epoch* starts, seeded with the app hash before that block. For each
+**active replica** of an open deal the chain derives the challenged chunk index from
+`sha256("vaultchain/challenge/v2" || seed || deal_id || provider)`, so replicas get different questions and cannot
+proxy each other. `GET /vaultchain/storage/challenge/{deal_id}?provider=<addr>` returns it (`400` no provider,
+`404` unknown deal, `409` not challengeable: no active replica for that provider, or it accepted after the epoch began).
 
-The provider answers with `MsgSubmitProof {deal_id, cid, epoch, chunk, proof}`: the chunk bytes plus the Merkle path, verified on chain against the committed root (`pkg/chunk.VerifyProof`). One proof per deal per epoch; a stale epoch or a wrong chunk is rejected. `vault-provider -home <vaultd home> -key provider` does this automatically (poll every `-prove-interval`, default 3 s; each proof pays the tx fee). By hand: `vaultd tx storage submit-proof <deal_id> --provider-url http://127.0.0.1:3333 --from provider`.
+The provider answers with `MsgSubmitProof {deal_id, cid, epoch, chunk, proof}`: the chunk bytes plus the Merkle path,
+verified on chain against the committed root (`pkg/chunk.VerifyProof`). One proof per replica per epoch; a stale epoch
+or a wrong chunk is rejected. `vault-provider -home <vaultd home> -key provider` accepts and proves automatically (poll
+every `-prove-interval`, default 3 s; each tx pays the fee). By hand: `vaultd tx storage accept-deal <deal_id>` and
+`vaultd tx storage submit-proof <deal_id> --provider-url http://127.0.0.1:3333 --from provider`.
 
-End-of-block rules (`x/storage/proof.go`):
-
-- An epoch rollover with no proof for the previous epoch adds one to the deal's `missed_proofs`; a proof resets it. After `max_missed_proofs` (default 3) consecutive misses the deal is `failed`: the escrowed payment is refunded to the owner, 10% of the provider's collateral is slashed to the owner, and the provider's capacity is freed.
-- At `expire_h` a deal with at least one verified proof is `closed` and the escrowed payment is released to the provider; a deal that never proved is `failed` (refund and slash as above).
-
-Breaking changes from the stub: `MsgSubmitProof` no longer has `attestation` (`submit-proof` takes only a deal id), `max_chunk_size` is capped at 512 KiB (`storage.MaxChunkSize`), and the max tx size is raised from 128 KiB to 1 MiB so a proof (one chunk) fits. Limits: the seed is the public app hash (a proposer can grind it), there is no multi-provider replication or provider-accept step, and the proof only shows the provider holds the challenged chunk in that epoch, so assurance grows with the number of epochs, not from a single proof.
+Limits (honest): the seed is the public app hash (a proposer can grind it and a provider learns its challenge one
+block ahead), there is no real multi-validator consensus, a proof only shows the provider held that one chunk in that
+epoch (assurance grows with epochs), there is no cap on repair attempts, and replica selection ignores locality,
+price and reputation. This is lab-grade storage assurance, not production.

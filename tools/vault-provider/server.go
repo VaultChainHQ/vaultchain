@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/vaultchain/vaultchain/pkg/chunk"
+	"github.com/vaultchain/vaultchain/x/storage"
 )
 
 const version = "vault-provider/2"
@@ -165,7 +166,8 @@ func (s *server) chainManifest(root string) (chunk.Manifest, error) {
 	return m, nil
 }
 
-// authorizeWrite requires an open deal for root that names this provider.
+// authorizeWrite requires a pending or open deal for root in which this
+// provider holds an assigned or active replica.
 func (s *server) authorizeWrite(root string) (chunk.Manifest, int, error) {
 	m, err := s.chainManifest(root)
 	if errors.Is(err, errNotCommitted) {
@@ -175,11 +177,7 @@ func (s *server) authorizeWrite(root string) (chunk.Manifest, int, error) {
 		return m, http.StatusBadGateway, err
 	}
 	var res struct {
-		Deals []struct {
-			Provider string `json:"provider"`
-			CID      string `json:"cid"`
-			Status   string `json:"status"`
-		} `json:"deals"`
+		Deals []storage.Deal `json:"deals"`
 	}
 	q := url.Values{"cid": {root}, "provider": {s.addr}}
 	code, err := s.chainGet("/vaultchain/storage/deals?"+q.Encode(), &res)
@@ -187,11 +185,14 @@ func (s *server) authorizeWrite(root string) (chunk.Manifest, int, error) {
 		return m, http.StatusBadGateway, fmt.Errorf("cannot verify deal on chain (HTTP %d, %v)", code, err)
 	}
 	for _, d := range res.Deals {
-		if d.CID == root && d.Provider == s.addr && d.Status == "open" {
+		if d.CID != root || (d.Status != storage.DealPending && d.Status != storage.DealOpen) {
+			continue
+		}
+		if _, ok := d.ReplicaIndex(s.addr); ok {
 			return m, 0, nil
 		}
 	}
-	return m, http.StatusForbidden, errors.New("no open deal for this object assigned to this provider")
+	return m, http.StatusForbidden, errors.New("no pending or open deal for this object assigned to this provider")
 }
 
 // --- objects ---------------------------------------------------------------
@@ -242,21 +243,29 @@ func (s *server) storeErr(w http.ResponseWriter, err error) {
 	}
 }
 
-// uploadObject streams a whole object (chunk by chunk, never buffering it) into
-// a staging directory, and only installs it if it hashes to the committed root.
+// uploadObject streams a whole object into the store (see ingest).
 func (s *server) uploadObject(w http.ResponseWriter, r *http.Request, root string) {
 	m, code, err := s.authorizeWrite(root)
 	if err != nil {
 		writeErr(w, code, err)
 		return
 	}
-	stage, err := s.store.newStaging()
+	n, code, err := s.ingest(http.MaxBytesReader(w, r.Body, int64(m.Size)+1), root, m)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
+		writeErr(w, code, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, map[string]any{"root": root, "size": m.Size, "chunks": n, "complete": true})
+}
+
+// ingest streams a whole object (chunk by chunk, never buffering it) into a
+// staging directory, and only installs it if it hashes to the committed root.
+func (s *server) ingest(body io.Reader, root string, m chunk.Manifest) (int, int, error) {
+	stage, err := s.store.newStaging()
+	if err != nil {
+		return 0, http.StatusInternalServerError, err
+	}
 	defer os.RemoveAll(stage) // no-op once renamed into place
-	body := http.MaxBytesReader(w, r.Body, int64(m.Size)+1)
 	var leaves []chunk.Hash
 	size, err := chunk.ReadChunks(body, int(m.ChunkSize), func(i int, c []byte) error {
 		leaf := chunk.HashLeaf(c)
@@ -264,26 +273,21 @@ func (s *server) uploadObject(w http.ResponseWriter, r *http.Request, root strin
 		return putChunkAt(stage, i, leaf, c)
 	})
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("upload failed: %w", err))
-		return
+		return 0, http.StatusBadRequest, fmt.Errorf("upload failed: %w", err)
 	}
 	if size != m.Size {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("size %d does not match manifest size %d", size, m.Size))
-		return
+		return 0, http.StatusBadRequest, fmt.Errorf("size %d does not match manifest size %d", size, m.Size)
 	}
 	if got := chunk.ContentRoot(chunk.TreeRoot(leaves), size, m.ChunkSize); got != root {
-		writeErr(w, http.StatusBadRequest, errors.New("content does not hash to the committed root"))
-		return
+		return 0, http.StatusBadRequest, errors.New("content does not hash to the committed root")
 	}
 	if err := s.store.writeManifest(stage, m); err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
+		return 0, http.StatusInternalServerError, err
 	}
 	if err := s.store.commitStaging(stage, m); err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
+		return 0, http.StatusInternalServerError, err
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"root": root, "size": size, "chunks": len(leaves), "complete": true})
+	return len(leaves), 0, nil
 }
 
 // inlineMIME lists types that are safe to render in a browser; everything else
