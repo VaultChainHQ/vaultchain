@@ -1,5 +1,6 @@
 # Fly.io app for a vaultl1 storage provider. Deploy from the repo root:
-#   fly deploy -c fly.provider.toml --ha=false
+#   fly deploy -c fly.provider.toml --ha=false              # vaultl1-provider
+#   fly deploy -c fly.provider.toml -a <other-app> --ha=false  # any additional provider
 # Needs ONE volume named provider_data in the same region (see docs/FLY-DEVNET.md).
 app = "vaultl1-provider"
 primary_region = "iad"
@@ -11,8 +12,9 @@ primary_region = "iad"
   CHAIN_ID = "vault-devnet-1"
   # Chain REST over Fly's private network (6PN); not exposed to the internet.
   DEVNET_REST = "http://vaultl1-devnet.internal:1317"
-  # Advertised on chain at registration; keep in step with the app name.
-  PUBLIC_URL = "https://vaultl1-provider.fly.dev"
+  # PUBLIC_URL (advertised on chain at registration) is derived from the app name
+  # by deploy/provider-entrypoint.sh, so this file serves any provider app:
+  #   fly deploy -c fly.provider.toml -a vaultl1-provider-2 --ha=false
   # Must fit the volume (1 GB), with headroom for the key and filesystem overhead.
   CAPACITY_BYTES = "700000000"
   COLLATERAL = "1000000000uvault"
