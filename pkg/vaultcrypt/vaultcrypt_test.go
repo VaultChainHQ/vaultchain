@@ -47,7 +47,7 @@ func TestRoundtripAndSizes(t *testing.T) {
 		if want := CiphertextSize(uint64(n), seg); uint64(len(ct)) != want {
 			t.Errorf("n=%d: ciphertext %d bytes, CiphertextSize says %d", n, len(ct), want)
 		}
-		if n > 0 && bytes.Contains(ct, plain[:min(n, 32)]) {
+		if n >= 16 && bytes.Contains(ct, plain[:min(n, 32)]) { // tiny inputs can match by chance
 			t.Errorf("n=%d: plaintext visible in ciphertext", n)
 		}
 		var got bytes.Buffer
