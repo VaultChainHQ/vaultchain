@@ -13,6 +13,16 @@ Clean-room decentralized storage L1 (local single-validator engine for Phase 0 l
 
 Inspired by public lessons from storage networks — **not** a fork of any existing chain.
 
+## Repositories
+
+| Repository | What it is |
+| --- | --- |
+| [VaultChainHQ/vaultchain](https://github.com/VaultChainHQ/vaultchain) | this repo: the chain (`vaultd`), storage provider, CLI and docs |
+| [VaultChainHQ/vaultchain-explorer](https://github.com/VaultChainHQ/vaultchain-explorer) | read-only Next.js explorer for the devnet (providers, deals, files, balances) |
+| [VaultChainHQ/vaultchain-upload](https://github.com/VaultChainHQ/vaultchain-upload) | Next.js site that signs, chunks, encrypts and uploads in the browser (keys never leave it) |
+
+`tools/tsvectors` generates the cross-language test vectors (addresses, signatures, signed txs, chunk roots, vaultcrypt ciphertexts, key envelopes, read tokens) that vaultchain-upload checks its TypeScript port against, and `go run ./tools/tsvectors -verify <file>` checks TypeScript output against the Go implementation.
+
 ## Storage classes
 
 1. **Personal** — encrypted personal capacity plans (`buy-capacity`)
