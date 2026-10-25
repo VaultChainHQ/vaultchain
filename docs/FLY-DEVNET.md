@@ -1,16 +1,22 @@
 # Running the vaultl1 devnet on Fly.io
 
-This deploys **one chain node** (`vaultl1-devnet`) and **three storage providers**
-(`vaultl1-provider`, `vaultl1-provider-2`, `vaultl1-provider-3`). All are tiny Fly machines
-with their own 1 GB volume. A separate multi-validator CometBFT network can be deployed next to
-it (`vaultl1-val-1/2/3`, see [Multi-validator devnet](#multi-validator-devnet-vaultl1-val-123)).
+This deploys **one chain node** (`vaultl1-devnet`, https://vaultl1-devnet.fly.dev) and **one storage
+provider** (`vaultl1-provider`, https://vaultl1-provider.fly.dev). Both are tiny Fly machines with their own
+1 GB volume. That is the default devnet and the only thing deployed.
+
+Larger setups are available but **not currently deployed**: a multi-validator CometBFT network
+(`vaultl1-val-1/2/3`, see [Multi-validator devnet](#multi-validator-devnet-vaultl1-val-123-not-currently-deployed))
+and extra providers (section 4b, plus the replication and repair tests). They were deployed and verified
+on 2026-10-25 and then retired to save cost. Everything needed to bring them back is in this file and in
+the repo (`fly.validator.toml`, `deploy/docker-compose.comet.yml`, `scripts/comet-local.sh`).
 
 ## What this is (and is not)
 
 - It is a **devnet**, not a decentralized network. The `vaultl1-devnet` node is a single validator
   that produces a block every `BLOCK_INTERVAL` (3s) on a timer: no multi-validator consensus, no
-  staking, no peer networking. (The separate CometBFT network `vaultl1-val-1/2/3` does run
-  multi-validator consensus; see [Multi-validator devnet](#multi-validator-devnet-vaultl1-val-123).
+  staking, no peer networking. (The CometBFT mode, `--consensus comet`, does run multi-validator
+  consensus, locally or on Fly; see
+  [Multi-validator devnet](#multi-validator-devnet-vaultl1-val-123-not-currently-deployed).
   It has no staking either.)
 - If the node's volume is lost, the chain is lost. Single machine, no HA.
 - Anyone can POST *signed* transactions to the public REST endpoint (that is the
@@ -77,7 +83,14 @@ fly logs -a vaultl1-provider
 The log prints `provider address: vault1...` and then `waiting for funds`. If you
 renamed the provider app, update `PUBLIC_URL` in `fly.provider.toml` first.
 
-### 4b. A second (or Nth) provider
+### 4b. A second (or Nth) provider (optional, not deployed)
+
+Only `vaultl1-provider` is deployed now. `vaultl1-provider-2` and `-3` were used for the replication and repair
+tests and then destroyed (app and volume). Their on-chain registrations on `vault-devnet-1` still exist and
+still show as `active`, because the chain cannot tell that an endpoint went away and their keys died with the
+volumes. Nothing is assigned to them unless a deal selects them, so pin deals to `vaultl1-provider` (the
+e2e script does) and expect a `replication 2` deal to wait for a provider that can no longer answer. To run the
+replication or repair tests again, deploy fresh providers under new names so they register with new keys.
 
 `fly.provider.toml` carries no app-specific values: the advertised `PUBLIC_URL`
 defaults to `https://$FLY_APP_NAME.fly.dev`, and the volume name is per app. So
@@ -188,6 +201,11 @@ NODE=https://vaultl1-devnet.fly.dev PROVIDER_URL=https://vaultl1-provider.fly.de
 
 ## Replication and failure test
 
+> Needs extra provider apps, which are not deployed now (see section 4b). Deploy two or three providers first,
+> or run `scripts/e2e-replication.sh` against locally started providers (leave `FAILURE_TEST` unset; use a
+> fresh chain, since stale local test providers stay registered on the chain under their old endpoints).
+> Last live results (2026-10-25, before the extra providers were retired): replication 11/11, repair 15/15.
+
 `scripts/e2e-replication.sh` opens one deal with `--replication 2` across both
 providers: both are assigned, the deal stays pending until the owner uploads to
 each, both accept and prove, and both serve a hash-identical download.
@@ -217,14 +235,16 @@ that slot to fail (3 missed epochs, about 2 minutes) and be reassigned to the sp
 bytes from the healthy replica, accepts and proves; then both downloads must match the original hash.
 The victim is always started again on exit. (Last live run: 15/15 checks passed.)
 
-## Multi-validator devnet (vaultl1-val-1/2/3)
+## Multi-validator devnet (vaultl1-val-1/2/3, not currently deployed)
 
-Three more apps run the same state machine behind CometBFT (`--consensus comet`, chain id
-`vault-devnet-2`, lab mode off), next to the old single-node `vaultl1-devnet`, which keeps
-running unchanged. Each validator is one `shared-cpu-1x` / 256 MB machine with its own 1 GB volume
-(`vaultd_data`). p2p (26656) is IPv6 6PN only (`<app>.internal`); only REST is public:
-`https://vaultl1-val-1.fly.dev`, `-val-2`, `-val-3`. Config: `fly.validator.toml` (generic, the app
-name comes from `-a`) and `deploy/Dockerfile.validator`.
+**Status: retired.** Three apps ran the same state machine behind CometBFT (`--consensus comet`, chain id
+`vault-devnet-2`, lab mode off), next to `vaultl1-devnet`. They were verified on 2026-10-25 and destroyed
+(apps and volumes) to save cost. Nothing below is live; the commands are the exact steps to deploy it again.
+Each validator was one `shared-cpu-1x` / 256 MB machine with its own 1 GB volume (`vaultd_data`). p2p
+(26656) is IPv6 6PN only (`<app>.internal`); only REST is public (`https://vaultl1-val-N.fly.dev` while
+deployed). Config: `fly.validator.toml` (generic, the app name comes from `-a`) and `deploy/Dockerfile.validator`.
+To run the same network without Fly: `docker compose -f deploy/docker-compose.comet.yml up --build` or
+`scripts/comet-local.sh`.
 
 **Fault tolerance: 3 equal validators tolerate zero failures.** CometBFT needs strictly more than 2/3 of
 the voting power to commit. With 3 x 10 power, two validators hold exactly 2/3, so stopping one
@@ -268,31 +288,33 @@ validators. To compare app hashes at one height:
 header must match on every node). A signed `bank-send` submitted to one node must show up in the balances
 of all three.
 
-**Live results (2026-10-25).** 3 validators at equal heights with equal app hashes at height 22; a tx sent to
-`val-1` visible on all three; `scripts/e2e-remote.sh` 34/34 and `scripts/e2e-replication.sh` 11/11 against
-`https://vaultl1-val-1.fly.dev` with two providers run locally (in a container) and registered on the new
-chain; one validator stopped = chain halted, started again = chain resumed and all three
-agree. Memory: about 100 MB of the 256 MB is still available per machine; `/data` was about 15 MB after the first hour.
-A request to the public REST name of a stopped validator wakes its machine (`auto_start_machines`), so
-poll the other validators or `fly machine status` while testing an outage.
+**Live results (2026-10-25, historical).** 3 validators at equal heights with equal app hashes at height 22; a tx
+sent to `val-1` visible on all three; `scripts/e2e-remote.sh` 34/34 and `scripts/e2e-replication.sh` 11/11
+against `https://vaultl1-val-1.fly.dev` with two providers run locally (in a container) and registered on the new
+chain; one validator stopped = chain halted, started again = chain resumed and all three agree. Memory: about
+100 MB of the 256 MB was still available per machine; `/data` was about 15 MB after the first hour. A request to
+the public REST name of a stopped validator wakes its machine (`auto_start_machines`), so poll the other
+validators or `fly machine status` while testing an outage.
 
-**Providers.** The three Fly providers still point at `vaultl1-devnet` (chain `vault-devnet-1`). A provider
-follows exactly one chain, so pointing it at `vault-devnet-2` means setting `DEVNET_REST` and `CHAIN_ID` for
-its app, funding its account on the new chain and letting it register again. Do that deliberately: the old
-devnet would then have no providers. The new chain currently has leftover test providers (from the
-verification runs, registered with `127.0.0.1` endpoints) that are not reachable; reset the chain (new
-volumes, or a new chain id) before using it for real.
+**Redeploying.** The keys in `~/.vaultl1-val-net` (kept locally, never in git) still match the genesis, so the
+same loop above recreates the same network from height 0 (the old volumes and their
+`priv_validator_state.json` are gone, which is fine for a fresh chain). Use new keys (re-run `vaultd testnet`)
+if the old ones may have been exposed. To run 4 validators (tolerates one failure), generate with
+`--validators 4`.
+
+**Providers.** A provider follows exactly one chain, so a provider for `vault-devnet-2` is its own app with
+`DEVNET_REST=http://vaultl1-val-1.internal:1317` and `CHAIN_ID=vault-devnet-2`, funded on that chain. The
+`vault-devnet-1` providers never moved.
 
 **Cost.** Each validator is about the price of one provider (a small machine plus a 1 GB volume, roughly
-USD 2 to 3 per month at current Fly pricing, check the pricing page): about USD 6 to 9 per month for the three. The
-old devnet can be retired once the providers have moved (not done; deleting is a separate decision).
+USD 2 to 3 per month at current Fly pricing, check the pricing page): about USD 6 to 9 per month for the three.
+
 ## Size and cost
 
-All three apps use `shared-cpu-1x` with 256 MB RAM and a 1 GB volume, one machine
-each. That is the smallest sensible setup (a few dollars per month in total at
-current Fly pricing; each extra provider adds one machine and one volume; check
-https://fly.io/docs/about/pricing/). `auto_stop_machines` is off because the chain
-must keep producing blocks.
+The two apps (`vaultl1-devnet`, `vaultl1-provider`) use `shared-cpu-1x` with 256 MB RAM and a 1 GB volume, one
+machine each. That is the smallest sensible setup: roughly USD 4 to 6 per month in total at current Fly
+pricing (an estimate, not a bill; check https://fly.io/docs/about/pricing/). Each extra provider or validator
+adds one machine and one volume. `auto_stop_machines` is off because the chain must keep producing blocks.
 
 ## CI
 

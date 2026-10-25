@@ -89,8 +89,10 @@ vaultd testnet --validators 3 --chain-id vault-devnet-2 --out build/testnet --ho
 
 Validators have equal power (10) fixed at genesis: there is no staking, validator-set change or validator slashing yet.
 CometBFT commits only with strictly more than 2/3 of the power, so 3 equal validators tolerate no failure (stop one and
-the chain halts until it returns); 4 tolerate one. A live 3-validator devnet runs on Fly (`fly.validator.toml`,
-`deploy/Dockerfile.validator`, `vaultl1-val-1/2/3`; see docs/FLY-DEVNET.md).
+the chain halts until it returns); 4 tolerate one. The default Fly devnet is one node plus one provider (`vaultl1-devnet`, `vaultl1-provider`). A 3-validator CometBFT
+network on Fly (`fly.validator.toml`, `deploy/Dockerfile.validator`, `vaultl1-val-1/2/3`) was deployed and verified,
+then retired to save cost: it is available but not currently deployed (redeploy steps in docs/FLY-DEVNET.md; or run it
+locally with `deploy/docker-compose.comet.yml` / `scripts/comet-local.sh`).
 The chain id is part of every signed tx; lab mode is a genesis flag and is off in `vaultd testnet` unless `--lab-mode`.
 
 ## Useful commands
@@ -246,7 +248,8 @@ message pins the first replica; `-` lets the chain pick all of them. Capacity is
 Behaviour change from M6: a market deal with `replication > 1` used to be charged once; payment is now per replica
 for both classes, and `open-deal` no longer requires a provider.
 
-Live repair: `scripts/e2e-repair.sh` needs three providers. It opens a 2-replica deal, stops one replica's machine,
+Live repair: `scripts/e2e-repair.sh` needs three providers (extra Fly provider apps are not deployed by default; add them as described in docs/FLY-DEVNET.md section 4b,
+or point `scripts/e2e-replication.sh` at locally started providers without `FAILURE_TEST`). It opens a 2-replica deal, stops one replica's machine,
 waits for the chain to fail and replace it with the spare provider (which fetches the bytes from the healthy
 replica, accepts and proves), and checks both downloads. See `docs/FLY-DEVNET.md`.
 
