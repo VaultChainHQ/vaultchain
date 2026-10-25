@@ -154,6 +154,17 @@ func DecodeMsg(raw json.RawMessage) (any, error) {
 			}
 		}
 		return m, nil
+	case access.MsgTypeRevokeAccess:
+		var m access.MsgRevokeAccess
+		if err := strictUnmarshal(raw, &m); err != nil {
+			return nil, fmt.Errorf("%s: %w", head.Type, err)
+		}
+		if m.Grantee != "" && m.Grantee != access.Public {
+			if err := vtypes.ValidateAddress(m.Grantee); err != nil {
+				return nil, err
+			}
+		}
+		return m, nil
 	case ibc.MsgTypeSimulateDeposit:
 		var m ibc.MsgSimulateIBCDeposit
 		if err := strictUnmarshal(raw, &m); err != nil {
@@ -322,6 +333,9 @@ func withSigner(m any, signer string) any {
 		v.From = signer
 		return v
 	case access.MsgGrantAccess:
+		v.From = signer
+		return v
+	case access.MsgRevokeAccess:
 		v.From = signer
 		return v
 	case ibc.MsgSimulateIBCDeposit:

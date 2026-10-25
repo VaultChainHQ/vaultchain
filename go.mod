@@ -7,8 +7,10 @@ require (
 	github.com/cometbft/cometbft v0.39.3
 	github.com/cosmos/cosmos-sdk v0.54.3
 	github.com/cosmos/go-bip39 v1.0.0
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
 	github.com/spf13/cobra v1.10.2
 	go.etcd.io/bbolt v1.4.0
+	golang.org/x/crypto v0.50.0
 )
 
 require (
@@ -41,7 +43,6 @@ require (
 	github.com/cosmos/ics23/go v0.11.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
 	github.com/dgraph-io/badger/v4 v4.6.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.4.0 // indirect
 	github.com/dunglas/httpsfv v1.1.0 // indirect
@@ -164,7 +165,6 @@ require (
 	go.uber.org/zap v1.27.1 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/arch v0.26.0 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/net v0.53.0 // indirect

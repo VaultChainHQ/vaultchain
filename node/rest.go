@@ -36,6 +36,7 @@ func (e *Engine) RESTHandler() http.Handler {
 	mux.HandleFunc("/vaultchain/access/grants", e.restGrants)
 	mux.HandleFunc(ibc.PolicyPath, e.restIBCPolicy)
 	mux.HandleFunc("/vaultchain/auth/accounts/", e.restAccount)
+	mux.HandleFunc("/vaultchain/auth/pubkeys/", e.restPubKey)
 	mux.HandleFunc("/vaultchain/txs", e.restSubmitTx)
 	mux.HandleFunc("/vaultchain/txs/", e.restTx)
 
@@ -173,7 +174,18 @@ func (e *Engine) restDeals(w http.ResponseWriter, r *http.Request) {
 
 func (e *Engine) restManifests(w http.ResponseWriter, r *http.Request) {
 	e.query(w, func(s kv.Store) (any, error) {
-		return map[string]any{"manifests": storage.NewKeeper(s).Manifests()}, nil
+		all := storage.NewKeeper(s).Manifests()
+		owner := r.URL.Query().Get("owner")
+		if owner == "" {
+			return map[string]any{"manifests": all}, nil
+		}
+		out := []storage.ManifestRecord{}
+		for _, m := range all {
+			if m.Owner == owner {
+				out = append(out, m)
+			}
+		}
+		return map[string]any{"manifests": out}, nil
 	})
 }
 
@@ -277,6 +289,24 @@ func (e *Engine) restAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	nonce, pending := e.AccountNonces(addr)
 	writeJSON(w, map[string]any{"address": addr, "nonce": nonce, "pending_nonce": pending})
+}
+
+// restPubKey serves GET /vaultchain/auth/pubkeys/{addr}: the public key an
+// account has signed a transaction with (404 until it has), which is what
+// someone needs to seal an encrypted file's key to that account.
+func (e *Engine) restPubKey(w http.ResponseWriter, r *http.Request) {
+	addr := strings.Trim(strings.TrimPrefix(r.URL.Path, "/vaultchain/auth/pubkeys/"), "/")
+	if err := vtypes.ValidateAddress(addr); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	e.query(w, func(s kv.Store) (any, error) {
+		pk, ok := PubKeyOf(s, addr)
+		if !ok {
+			return nil, errNotFound
+		}
+		return map[string]any{"address": addr, "pubkey": pk}, nil
+	})
 }
 
 // restTx serves GET /vaultchain/txs/{hash}: the inclusion result of a tx while

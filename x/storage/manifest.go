@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/hex"
 	"fmt"
 
 	"github.com/vaultchain/vaultchain/kv"
@@ -17,6 +18,14 @@ const MinChunkSize = 4 * 1024
 // the 1 MiB request cap.
 const MaxChunkSize = 512 * 1024
 
+// EncryptionV1 marks an object whose bytes are client-side ciphertext in the
+// pkg/vaultcrypt v1 stream format (XChaCha20-Poly1305). The chain never sees
+// keys or plaintext; it only records the marker and the owner's key envelope.
+const EncryptionV1 = "vle1"
+
+// MaxKeyEnvelopeHex bounds a hex key envelope (a sealed 32-byte key is 210 hex chars).
+const MaxKeyEnvelopeHex = 512
+
 var prefixManifest = []byte("storage/manifest/")
 
 // MsgCommitManifest registers an object's content ID and shape on chain. The
@@ -29,6 +38,12 @@ type MsgCommitManifest struct {
 	ChunkSize uint32 `json:"chunk_size"`
 	Mime      string `json:"mime"`
 	Name      string `json:"name"`
+	// Encryption is "" (plaintext) or EncryptionV1. The root, size and chunks
+	// then describe the ciphertext.
+	Encryption string `json:"encryption,omitempty"`
+	// KeyEnvelope is the file key sealed to the committer (hex); required
+	// exactly when Encryption is set.
+	KeyEnvelope string `json:"key_envelope,omitempty"`
 }
 
 // ManifestRecord is a committed manifest plus ownership.
@@ -40,6 +55,18 @@ type ManifestRecord struct {
 	Name      string `json:"name"`
 	Owner     string `json:"owner"`
 	Height    int64  `json:"height"`
+
+	Encryption  string `json:"encryption,omitempty"`
+	KeyEnvelope string `json:"key_envelope,omitempty"`
+}
+
+// Encrypted reports whether the object is client-side encrypted.
+func (r ManifestRecord) Encrypted() bool { return r.Encryption != "" }
+
+// IsEncrypted reports whether the committed manifest root is encrypted.
+func (k Keeper) IsEncrypted(root string) bool {
+	r, ok := k.Manifest(root)
+	return ok && r.Encrypted()
 }
 
 // Chunk converts to the pkg/chunk manifest.
@@ -86,12 +113,28 @@ func (k Keeper) CommitManifest(msg MsgCommitManifest, height int64) error {
 	if msg.ChunkSize > MaxChunkSize {
 		return fmt.Errorf("chunk_size must be <= %d (a proof carries a whole chunk)", MaxChunkSize)
 	}
+	switch msg.Encryption {
+	case "":
+		if msg.KeyEnvelope != "" {
+			return fmt.Errorf("key_envelope is only valid with encryption")
+		}
+	case EncryptionV1:
+		if msg.KeyEnvelope == "" || len(msg.KeyEnvelope) > MaxKeyEnvelopeHex || len(msg.KeyEnvelope)%2 != 0 {
+			return fmt.Errorf("encrypted manifests need a hex key_envelope of at most %d chars", MaxKeyEnvelopeHex)
+		}
+		if _, err := hex.DecodeString(msg.KeyEnvelope); err != nil {
+			return fmt.Errorf("key_envelope must be hex")
+		}
+	default:
+		return fmt.Errorf("unknown encryption %q", msg.Encryption)
+	}
 	if _, exists := k.Manifest(msg.Root); exists {
 		return fmt.Errorf("manifest %s already committed", msg.Root)
 	}
 	kv.SetJSON(k.S, manifestKey(msg.Root), ManifestRecord{
 		Root: msg.Root, Size: msg.Size, ChunkSize: msg.ChunkSize, Mime: msg.Mime, Name: msg.Name,
 		Owner: msg.From, Height: height,
+		Encryption: msg.Encryption, KeyEnvelope: msg.KeyEnvelope,
 	})
 	return nil
 }

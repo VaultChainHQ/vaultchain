@@ -193,6 +193,14 @@ func (a *App) ProposerAccount(consAddr string) string { return string(a.db.Get(v
 
 func nonceKey(addr string) []byte { return kv.K("auth", "nonce", addr) }
 
+func pubKeyKey(addr string) []byte { return kv.K("auth", "pubkey", addr) }
+
+// PubKeyOf returns the hex secp256k1 public key an account has signed with.
+func PubKeyOf(r kv.Reader, addr string) (string, bool) {
+	b := r.Get(pubKeyKey(addr))
+	return string(b), b != nil
+}
+
 // Nonce is the next expected nonce for addr.
 func Nonce(r kv.Reader, addr string) uint64 { return kv.GetU64(r, nonceKey(addr)) }
 
@@ -363,6 +371,11 @@ func deliverTx(bc *kv.Cache, ctx execCtx, raw []byte) TxResult {
 		}
 	}
 	kv.SetU64(bc, nonceKey(dt.Signer), dt.Tx.Nonce+1)
+	// Remember the signer's public key (an address is only a hash of it) so
+	// others can seal file keys to it. Written once, from a verified signature.
+	if k := pubKeyKey(dt.Signer); bc.Get(k) == nil {
+		bc.Set(k, []byte(dt.Tx.PubKey))
+	}
 
 	// Messages: atomic on a branch.
 	branch := kv.NewCache(bc)
@@ -408,7 +421,10 @@ func execMsg(s kv.Store, ctx execCtx, m any) error {
 	case storage.MsgSubmitProof:
 		return sk.SubmitProof(msg, ctx.height)
 	case access.MsgGrantAccess:
-		return access.NewKeeper(s).Grant(msg, ctx.height, sk.OwnerOfCID)
+		return access.NewKeeper(s).GrantChecked(msg, ctx.height, sk.OwnerOfCID, sk.IsEncrypted)
+	case access.MsgRevokeAccess:
+		_, err := access.NewKeeper(s).Revoke(msg, sk.OwnerOfCID)
+		return err
 	case ibc.MsgSimulateIBCDeposit:
 		return ibc.NewKeeper(s).SimulateDeposit(msg)
 	default:
