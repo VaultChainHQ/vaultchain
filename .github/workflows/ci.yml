@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, "roadmap/**"]
+    branches: [main, master, "roadmap/**"]
   pull_request:
 
 permissions:

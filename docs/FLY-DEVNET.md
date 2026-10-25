@@ -112,6 +112,20 @@ fly volumes snapshots list <volume-id> -a vaultl1-devnet   # Fly takes daily sna
 To reset the chain: destroy the volume and redeploy (all state and keys are lost,
 and the provider must re-register on the new chain, so reset its volume too).
 
+## End-to-end test against the live devnet
+
+`scripts/e2e-remote.sh` drives the whole flow against the deployed node and provider:
+commit-manifest, open-deal, provider auto-accept, upload, automatic Merkle proof,
+full and Range downloads with hash checks, and access enforcement (anonymous 401,
+no-grant 403, granted reader 200, public `*` grant). It creates `alice` and `bob`
+keys in `~/.vaultl1-e2e`, prints their addresses, and asks you to fund them (same
+`bank-send` command as above) before it runs.
+
+```bash
+go build -o build/vaultd ./cmd/vaultd
+NODE=https://vaultl1-devnet.fly.dev PROVIDER_URL=https://vaultl1-provider.fly.dev scripts/e2e-remote.sh
+```
+
 ## Size and cost
 
 Both apps use `shared-cpu-1x` with 256 MB RAM and a 1 GB volume, one machine each.
