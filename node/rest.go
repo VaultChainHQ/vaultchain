@@ -240,9 +240,24 @@ func (e *Engine) restSubmitTx(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST required", http.StatusMethodNotAllowed)
 		return
 	}
+	if e.limiter != nil && !e.exemptFromRateLimit(r) {
+		if ok, wait := e.limiter.allow(e.clientIP(r)); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+	}
 	var raw json.RawMessage
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&raw); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := e.checkPublicTx(raw, e.isAdmin(r)); err != nil {
+		code := http.StatusBadRequest
+		if err == errRestricted {
+			code = http.StatusForbidden
+		}
+		http.Error(w, err.Error(), code)
 		return
 	}
 	hash, err := e.SubmitTx(raw)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -100,7 +101,15 @@ func postTx(cmd *cobra.Command, msgs ...any) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.Post(base+"/vaultchain/txs", "application/json", bytes.NewReader(raw))
+	req, err := http.NewRequest(http.MethodPost, base+"/vaultchain/txs", bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if tok := os.Getenv(adminTokenEnv); tok != "" {
+		req.Header.Set(node.AdminTokenHeader, tok)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}

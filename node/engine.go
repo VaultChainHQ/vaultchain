@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	"github.com/vaultchain/vaultchain/kv"
 	"github.com/vaultchain/vaultchain/x/bank"
 )
@@ -24,6 +26,16 @@ type Config struct {
 	Proposer string
 	// TxRetention is how many blocks of tx records to keep (default 1000).
 	TxRetention int64
+	// AdminToken, when set, lets a REST caller submit restricted (lab-only)
+	// messages via the X-Admin-Token header. Empty: nobody can.
+	AdminToken string
+	// MinFee is the minimum fee this node admits to its mempool (not consensus).
+	MinFee sdk.Coins
+	// TxRatePerMin limits POST /vaultchain/txs per client IP (0 = unlimited).
+	TxRatePerMin int
+	// ClientIPHeader names a proxy header holding the real client IP (e.g.
+	// Fly-Client-IP). Only set it behind a proxy that overwrites the header.
+	ClientIPHeader string
 }
 
 type Engine struct {
@@ -34,6 +46,7 @@ type Engine struct {
 	mpMu    sync.Mutex        // guards mempool, pending, and block production
 	pending map[string]uint64 // signer -> next nonce including queued txs
 	genesis *Genesis
+	limiter *rateLimiter
 }
 
 // DBFile is the state database inside <home>/data.
@@ -75,7 +88,11 @@ func NewEngine(cfg Config) (*Engine, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("genesis chain_id %q does not match database chain_id %q", g.ChainID, app.ChainID())
 	}
-	return &Engine{cfg: cfg, db: db, app: app, genesis: g, pending: map[string]uint64{}}, nil
+	e := &Engine{cfg: cfg, db: db, app: app, genesis: g, pending: map[string]uint64{}}
+	if cfg.TxRatePerMin > 0 {
+		e.limiter = newRateLimiter(cfg.TxRatePerMin)
+	}
+	return e, nil
 }
 
 func (e *Engine) Close() error { return e.db.Close() }
@@ -96,6 +113,9 @@ func (e *Engine) SubmitTx(raw json.RawMessage) (string, error) {
 	defer e.mpMu.Unlock()
 	if len(e.mempool) >= maxMempool {
 		return "", fmt.Errorf("mempool full")
+	}
+	if !dt.Tx.Fee.IsAllGTE(e.cfg.MinFee) {
+		return "", fmt.Errorf("fee below this node's minimum (%s)", e.cfg.MinFee)
 	}
 	var chainID string
 	var next uint64
