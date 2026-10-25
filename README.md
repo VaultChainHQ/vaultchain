@@ -20,6 +20,7 @@ Inspired by public lessons from storage networks — **not** a fork of any exist
 | [VaultChainHQ/vaultchain](https://github.com/VaultChainHQ/vaultchain) | this repo: the chain (`vaultd`), storage provider, CLI and docs |
 | [VaultChainHQ/vaultchain-explorer](https://github.com/VaultChainHQ/vaultchain-explorer) | read-only Next.js explorer for the devnet (providers, deals, files, balances) |
 | [VaultChainHQ/vaultchain-upload](https://github.com/VaultChainHQ/vaultchain-upload) | Next.js site that signs, chunks, encrypts and uploads in the browser (keys never leave it) |
+| [VaultChainHQ/vaultchain-web](https://github.com/VaultChainHQ/vaultchain-web) | site, docs hub and a local-first profile vault with passphrase-encrypted keys ([live](https://vaultchain-web.vercel.app)) |
 
 `tools/tsvectors` generates the cross-language test vectors (addresses, signatures, signed txs, chunk roots, vaultcrypt ciphertexts, key envelopes, read tokens) that vaultchain-upload checks its TypeScript port against, and `go run ./tools/tsvectors -verify <file>` checks TypeScript output against the Go implementation.
 
