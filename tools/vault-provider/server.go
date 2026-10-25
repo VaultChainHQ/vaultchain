@@ -19,7 +19,7 @@ import (
 	"github.com/vaultchain/vaultchain/x/storage"
 )
 
-const version = "vault-provider/2"
+const version = "vault-provider/3"
 
 type server struct {
 	addr    string // this provider's vault address; deals must name it
@@ -31,6 +31,13 @@ type server struct {
 
 	mu        sync.Mutex
 	manifests map[string]chunk.Manifest // chain manifests are immutable once committed
+	owners    map[string]string         // manifest root -> owner (immutable too)
+	access    map[string]cachedDecision // root|reader -> recent positive read decision
+
+	// readPub/readSign sign outgoing read tokens (replica-to-replica copies);
+	// set by newProver. Without them requests go out anonymous.
+	readPub  string
+	readSign func([]byte) ([]byte, error)
 }
 
 func newServer(addr, rest, chainID, dataDir string, origins []string) (*server, error) {
@@ -40,7 +47,7 @@ func newServer(addr, rest, chainID, dataDir string, origins []string) (*server, 
 	}
 	s := &server{
 		addr: addr, rest: strings.TrimRight(rest, "/"), chainID: chainID, store: st,
-		origins: map[string]bool{}, manifests: map[string]chunk.Manifest{},
+		origins: map[string]bool{}, manifests: map[string]chunk.Manifest{}, owners: map[string]string{}, access: map[string]cachedDecision{},
 		client: &http.Client{Timeout: 10 * time.Second},
 	}
 	for _, o := range origins {
@@ -70,7 +77,7 @@ func (s *server) withCORS(next http.Handler) http.Handler {
 				h := w.Header()
 				h.Set("Access-Control-Allow-Origin", o)
 				h.Set("Access-Control-Allow-Methods", "GET, HEAD, PUT, POST, OPTIONS")
-				h.Set("Access-Control-Allow-Headers", "Content-Type, Range, X-Vault-Proof")
+				h.Set("Access-Control-Allow-Headers", "Content-Type, Range, Authorization, X-Vault-Proof")
 				h.Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Accept-Ranges, X-Vault-Proof")
 				h.Set("Access-Control-Max-Age", "600")
 			} else if r.Method == http.MethodOptions {
@@ -143,6 +150,7 @@ func (s *server) chainManifest(root string) (chunk.Manifest, error) {
 			ChunkSize uint32 `json:"chunk_size"`
 			Mime      string `json:"mime"`
 			Name      string `json:"name"`
+			Owner     string `json:"owner"`
 		} `json:"manifest"`
 	}
 	code, err := s.chainGet("/vaultchain/storage/manifests/"+url.PathEscape(root), &res)
@@ -162,6 +170,7 @@ func (s *server) chainManifest(root string) (chunk.Manifest, error) {
 	}
 	s.mu.Lock()
 	s.manifests[root] = m
+	s.owners[root] = r.Owner
 	s.mu.Unlock()
 	return m, nil
 }
@@ -210,7 +219,9 @@ func (s *server) handleObjects(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case tail == "" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
-		s.serveObject(w, r, root)
+		if s.authorizeRead(w, r, root) {
+			s.serveObject(w, r, root)
+		}
 	case tail == "" && (r.Method == http.MethodPost || r.Method == http.MethodPut):
 		s.uploadObject(w, r, root)
 	case tail == "status" && r.Method == http.MethodGet:
@@ -313,7 +324,6 @@ func (s *server) serveObject(w http.ResponseWriter, r *http.Request, root string
 	h.Set("Content-Type", m.Mime)
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	h.Set("Cache-Control", "public, max-age=31536000, immutable")
 	h.Set("ETag", `"`+root+`"`)
 	if !inlineMIME[m.Mime] {
 		disp := "attachment"
@@ -342,7 +352,9 @@ func (s *server) handleChunks(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		s.putChunk(w, r, root, idx)
 	case http.MethodGet, http.MethodHead:
-		s.getChunk(w, r, root, idx)
+		if s.authorizeRead(w, r, root) {
+			s.getChunk(w, r, root, idx)
+		}
 	default:
 		writeErr(w, http.StatusMethodNotAllowed, errors.New("GET or PUT required"))
 	}

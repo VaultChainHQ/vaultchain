@@ -148,8 +148,10 @@ func DecodeMsg(raw json.RawMessage) (any, error) {
 		if err := strictUnmarshal(raw, &m); err != nil {
 			return nil, fmt.Errorf("%s: %w", head.Type, err)
 		}
-		if err := vtypes.ValidateAddress(m.Grantee); err != nil {
-			return nil, err
+		if m.Grantee != access.Public {
+			if err := vtypes.ValidateAddress(m.Grantee); err != nil {
+				return nil, err
+			}
 		}
 		return m, nil
 	case ibc.MsgTypeSimulateDeposit:

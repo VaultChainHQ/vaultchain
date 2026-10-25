@@ -105,6 +105,7 @@ func (e *Engine) query(w http.ResponseWriter, fn func(s kv.Store) (any, error)) 
 
 func (e *Engine) restNodeInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
+		"height": e.app.Height(),
 		"default_node_info": map[string]any{
 			"network": e.app.ChainID(),
 			"moniker": "vaultchain-local",

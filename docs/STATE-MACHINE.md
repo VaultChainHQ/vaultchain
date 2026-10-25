@@ -27,7 +27,7 @@ the same inputs on the same genesis gives the same state and the same app hash (
 | `bank/bal/<addr>` | JSON coins |
 | `auth/nonce/<addr>` | u64 |
 | `storage/params`, `storage/prov/<addr>`, `storage/manifest/<root>` (chunk manifest, written once by `MsgCommitManifest`), `storage/plan/<id>`, `storage/deal/<id>` (deal plus `replicas[]`, one entry per assigned provider/slot; status `pending`/`open`/`closed`/`failed`/`cancelled`), `storage/proof/<id>` (verified proof: deal, epoch, chunk index), `storage/epoch` (current challenge epoch `{height, seed}`, rewritten at each `proof_interval_blocks` boundary by the storage end-block hook, which runs before the block header/app hash is computed), `storage/seq/*` | JSON |
-| `access/grant/<id>`, `access/seq` | JSON |
+| `access/grant/<id>`, `access/seq` | JSON; grantee `*` (`access.Public`) is a public, read-only grant that providers honour for anonymous reads |
 | `ibc/lab_mode` | `1`/`0`, set at genesis |
 | `_meta/*`, `_blocks/<h>`, `_txs/<hash>`, `_txidx/<h><i>` | bookkeeping (chain id, height, time, headers, tx records) — **not** in the app hash |
 

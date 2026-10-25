@@ -76,10 +76,25 @@ echo "=== proofs ==="; curl -sf "http://${REST}/vaultchain/storage/proofs"; echo
 echo "=== plans ==="; curl -sf "http://${REST}/vaultchain/storage/plans"; echo
 echo "=== balances alice ==="; curl -sf "http://${REST}/cosmos/bank/v1beta1/balances/${ALICE}"; echo
 
-echo "=== download (full) ==="
-curl -sf "http://127.0.0.1${PROV_LISTEN}/v1/objects/${ROOT_HEX}" -o /tmp/vault-int-got.bin
+OBJ="http://127.0.0.1${PROV_LISTEN}/v1/objects/${ROOT_HEX}"
+echo "=== anonymous read of a private object is refused ==="
+CODE="$(curl -s -o /dev/null -w "%{http_code}" "${OBJ}")"
+[[ "${CODE}" == 401 ]] || { echo "expected 401, got ${CODE}"; exit 1; }
+TOK="$(./build/vaultd read-token "${ROOT_HEX}" --provider "${PROV}" --from alice --home "${HOME_DIR}")"
+AUTH=(-H "Authorization: Vault ${TOK}")
+echo "=== download (full, owner token) ==="
+curl -sf "${AUTH[@]}" "${OBJ}" -o /tmp/vault-int-got.bin
 cmp "${FILE}" /tmp/vault-int-got.bin
 echo "=== download (range 262000-263000, crosses a chunk boundary) ==="
-curl -sf -H "Range: bytes=262000-263000" "http://127.0.0.1${PROV_LISTEN}/v1/objects/${ROOT_HEX}" -o /tmp/vault-int-range.bin
-tail -c +262001 "${FILE}" | head -c 1001 | cmp - /tmp/vault-int-range.bin
+curl -sf "${AUTH[@]}" -H "Range: bytes=262000-263000" "${OBJ}" -o /tmp/vault-int-range.bin
+[[ "$(stat -c %s /tmp/vault-int-range.bin)" == 1001 ]]
+cmp -n 1001 -i 262000:0 "${FILE}" /tmp/vault-int-range.bin
+echo "=== public grant opens anonymous reads ==="
+./build/vaultd tx access grant "${ROOT_HEX}" "*" read 0 --from alice --home "${HOME_DIR}" --node "${NODE}"
+for _ in $(seq 1 20); do
+  [[ "$(curl -s -o /dev/null -w "%{http_code}" "${OBJ}")" == 200 ]] && break
+  sleep 0.5
+done
+curl -sf "${OBJ}" -o /tmp/vault-int-pub.bin
+cmp "${FILE}" /tmp/vault-int-pub.bin
 echo INT_OK

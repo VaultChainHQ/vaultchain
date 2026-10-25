@@ -125,7 +125,8 @@ chmod +x scripts/*.sh
 
 # terminal 3 — lab UI (:3456)
 ./scripts/start-vault-lab.sh
-# From Windows against WSL, use the printed WSL IP, e.g. http://172.x.x.x:3456/
+# The lab binds 127.0.0.1:3456 by default because it signs with local keys. Under WSL2 localhost
+# forwarding normally reaches it from Windows; only if you must, set VAULT_LAB_LISTEN=0.0.0.0:3456.
 ```
 
 Lab flows: register provider, buy personal capacity, upload a file (hash into a manifest, commit it, open a deal, stream the bytes to the provider; the provider then proves it holds them), IBC policy / mint voucher. The lab has no CORS and refuses cross-origin POSTs: use the UI it serves.
@@ -146,16 +147,39 @@ chunk hashes plus size and chunk size, so the root alone pins the exact bytes.
 | Provider route | Purpose |
 |----------------|---------|
 | `POST\|PUT /v1/objects/{root}` | stream a whole object (verified, then installed atomically) |
-| `GET\|HEAD /v1/objects/{root}` | download, supports `Range`; each chunk is re-hashed before it is served |
-| `GET /v1/objects/{root}/status` | stored / complete |
+| `GET\|HEAD /v1/objects/{root}` | download, supports `Range`; each chunk is re-hashed before it is served; **needs read access** (see below) |
+| `GET /v1/objects/{root}/status` | stored / complete (open: reveals only chunk coverage of a root you already know) |
 | `PUT /v1/chunks/{root}/{i}` | upload one chunk with its Merkle proof in `X-Vault-Proof` |
-| `GET\|HEAD /v1/chunks/{root}/{i}` | one chunk (+ `X-Vault-Proof` once the object is complete) |
+| `GET\|HEAD /v1/chunks/{root}/{i}` | one chunk (+ `X-Vault-Proof` once the object is complete); needs read access |
 | `/status`, `/version` | node info |
 
 Responses use the manifest's Content-Type with `nosniff` and a locked-down CSP, and are `attachment` unless the type
 is a safe inline media type. CORS is off unless you pass `-allow-origin https://app.example` (repeatable; `*` is
 ignored). **Removed:** `/list`, `/upload`, `/v1/upload`, `/download` (no listing; use `GET /vaultchain/storage/manifests`).
-Reads are open to anyone who knows the root; access-grant enforcement on retrieval is not implemented.
+
+### Read access
+
+A provider serves `GET/HEAD /v1/objects/{root}` and `/v1/chunks/{root}/{i}` only to a reader the chain allows, and
+checks the chain (manifest owner, `access/grants`) on each request (positive answers are cached for 5 s). A reader
+proves who it is with a **signed read token**, `<pubkey_hex>.<expiry_unix>.<sig_hex>`, sent as
+`Authorization: Vault <token>` or `?vault_token=<token>` (for `<img>`/`<video>` URLs). It signs
+`"vaultchain/read/v1\n<provider address>\n<root>\n<expiry>"`, so a token only works for one object at one provider,
+and lives at most 1 h. Get one with `vaultd read-token <root> --provider <addr> --from <key> [--ttl 10m]`.
+
+The reader is allowed if any of these hold:
+
+1. it owns the manifest;
+2. it holds a non-expired `read` or `write` grant (`vaultd tx access grant <root> <addr> read <expiry_height|0>`);
+3. the root has a **public grant** (`vaultd tx access grant <root> "*" read 0`; read only): then anonymous reads work
+   and responses are `Cache-Control: public, immutable`;
+4. it is an assigned/active replica of a pending/open deal for the root. This is what lets a provider fetch the
+   bytes from a peer when repairing; providers sign these fetches with their own key.
+
+No token on a non-public object gives `401` (`WWW-Authenticate: Vault`), a valid token without access gives `403`, a
+root with no manifest `404`. Limits: a token is a bearer credential (one in a URL ends up in logs: keep TTLs short);
+there is no grant revocation message yet, so a grant stays until it expires; the 5 s cache only delays that
+further; and a provider that holds the bytes can of course read them, since nothing is encrypted at rest.
+Encryption of private objects is not implemented.
 
 Chain REST additions: `GET /vaultchain/storage/manifests[/{root}]` and `deals?cid=&provider=&owner=`.
 Run `./scripts/integration-local.sh` for the full CLI flow, or `go test ./tools/vault-provider` for the same flow

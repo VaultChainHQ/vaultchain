@@ -22,6 +22,11 @@ const provAddr = "vault1provider"
 type fakeChain struct {
 	mans  map[string]chunk.Manifest
 	deals []map[string]string
+
+	owner     string           // owner of every committed manifest
+	grants    []map[string]any // access grants (cid, grantee, capability, expiry_height)
+	publicAll bool             // every object behaves as if granted to "*"
+	height    int64
 }
 
 func (f *fakeChain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +38,21 @@ func (f *fakeChain) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]any{"manifest": map[string]any{
-			"root": m.Root, "size": m.Size, "chunk_size": m.ChunkSize, "mime": m.Mime, "name": m.Name}})
+			"root": m.Root, "size": m.Size, "chunk_size": m.ChunkSize, "mime": m.Mime, "name": m.Name, "owner": f.owner}})
+	case r.URL.Path == "/cosmos/base/tendermint/v1beta1/node_info":
+		json.NewEncoder(w).Encode(map[string]any{"height": f.height})
+	case r.URL.Path == "/vaultchain/access/grants":
+		cid := r.URL.Query().Get("cid")
+		out := []map[string]any{}
+		for _, g := range f.grants {
+			if g["cid"] == cid {
+				out = append(out, g)
+			}
+		}
+		if f.publicAll {
+			out = append(out, map[string]any{"cid": cid, "grantee": "*", "capability": "read", "expiry_height": 0})
+		}
+		json.NewEncoder(w).Encode(map[string]any{"grants": out})
 	case r.URL.Path == "/vaultchain/storage/deals":
 		out := []map[string]any{}
 		for _, d := range f.deals {
@@ -63,7 +82,7 @@ type env struct {
 
 func newEnv(t *testing.T, origins ...string) *env {
 	t.Helper()
-	chain := &fakeChain{mans: map[string]chunk.Manifest{}}
+	chain := &fakeChain{mans: map[string]chunk.Manifest{}, owner: "vault1owner", publicAll: true, height: 10}
 	cs := httptest.NewServer(chain)
 	t.Cleanup(cs.Close)
 	dir := t.TempDir()

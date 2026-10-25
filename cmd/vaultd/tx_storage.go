@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/vaultchain/vaultchain/pkg/chunk"
+	"github.com/vaultchain/vaultchain/pkg/readauth"
 	"github.com/vaultchain/vaultchain/x/access"
 	"github.com/vaultchain/vaultchain/x/storage"
 )
@@ -176,7 +178,18 @@ submits them as a signed proof. Normally vault-provider does this itself
 				return err
 			}
 			ch := res.Challenge
-			resp, err := http.Get(fmt.Sprintf("%s/v1/chunks/%s/%d", strings.TrimRight(providerURL, "/"), ch.Root, ch.Index))
+			// The provider serves chunks to its own key as an assigned replica; sign for it.
+			from, _ := cmd.Flags().GetString("from")
+			tok, err := signReadToken(cmd, from, self, ch.Root, time.Minute)
+			if err != nil {
+				return err
+			}
+			creq, err := http.NewRequest("GET", fmt.Sprintf("%s/v1/chunks/%s/%d", strings.TrimRight(providerURL, "/"), ch.Root, ch.Index), nil)
+			if err != nil {
+				return err
+			}
+			readauth.Attach(creq, tok)
+			resp, err := http.DefaultClient.Do(creq)
 			if err != nil {
 				return err
 			}
@@ -205,7 +218,7 @@ submits them as a signed proof. Normally vault-provider does this itself
 func cmdTxGrantAccess() *cobra.Command {
 	return &cobra.Command{
 		Use:   "grant [cid] [grantee] [capability] [expiry_height]",
-		Short: "Grant access to a CID",
+		Short: "Grant read/write access to a CID (grantee * = anyone, read only)",
 		Args:  cobra.ExactArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			exp, err := strconv.ParseInt(args[3], 10, 64)

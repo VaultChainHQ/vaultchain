@@ -14,6 +14,10 @@ const (
 	CapabilityWrite    = "write"
 )
 
+// Public is the grantee that makes a CID readable by anyone who knows its root.
+// Only a read capability may be granted publicly.
+const Public = "*"
+
 var (
 	prefixGrant = []byte("access/grant/")
 	keySeq      = []byte("access/seq")
@@ -54,6 +58,9 @@ func (k Keeper) Grant(msg MsgGrantAccess, height int64, ownerOf OwnerResolver) e
 	}
 	if msg.Capability != CapabilityRead && msg.Capability != CapabilityWrite {
 		return fmt.Errorf("capability must be read or write")
+	}
+	if msg.Grantee == Public && msg.Capability != CapabilityRead {
+		return fmt.Errorf("only read may be granted publicly")
 	}
 	if msg.ExpiryH > 0 && msg.ExpiryH <= height {
 		return fmt.Errorf("expiry must be in the future")

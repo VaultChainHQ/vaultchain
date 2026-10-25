@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/vaultchain/vaultchain/pkg/chunk"
+	"github.com/vaultchain/vaultchain/pkg/readauth"
 )
 
 type Lab struct {
@@ -447,6 +449,12 @@ func (l *Lab) handleProviderDownload(w http.ResponseWriter, r *http.Request) {
 		if v := r.Header.Get(h); v != "" {
 			req.Header.Set(h, v)
 		}
+	}
+	// Providers only serve private objects to a signed reader: sign as the lab key.
+	if tok, err := l.readToken(root); err == nil {
+		readauth.Attach(req, tok)
+	} else {
+		log.Printf("read token: %v (requesting anonymously)", err)
 	}
 	res, err := l.Client.Do(req)
 	if err != nil {

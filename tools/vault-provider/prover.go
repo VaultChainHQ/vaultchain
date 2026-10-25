@@ -36,6 +36,7 @@ type prover struct {
 }
 
 func newProver(s *server, key, pubHex string, sign func([]byte) ([]byte, error), fee sdk.Coins) *prover {
+	s.readPub, s.readSign = pubHex, sign // replica-to-replica copies authenticate as this provider
 	return &prover{s: s, key: key, pubHex: pubHex, sign: sign, fee: fee, sentFor: map[uint64]int64{}, acceptSent: map[uint64]time.Time{}}
 }
 
@@ -163,7 +164,7 @@ func (p *prover) repairFetch(d storage.Deal, m chunk.Manifest) bool {
 		if code, err := p.s.chainGet("/vaultchain/storage/providers/"+r.Provider, &res); err != nil || code != http.StatusOK || res.Provider.Endpoint == "" {
 			continue
 		}
-		if err := p.s.fetchObject(res.Provider.Endpoint, m); err != nil {
+		if err := p.s.fetchObject(res.Provider.Endpoint, r.Provider, m); err != nil {
 			log.Printf("prover: deal %d: fetch from %s: %v", d.ID, r.Provider, err)
 			continue
 		}

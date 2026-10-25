@@ -18,7 +18,7 @@ import (
 var webFS embed.FS
 
 func main() {
-	listen := flag.String("listen", ":3456", "HTTP listen address")
+	listen := flag.String("listen", "127.0.0.1:3456", "HTTP listen address (the lab signs with local keys: keep it on loopback)")
 	home := flag.String("home", "", "vaultd home (default ~/.vaultchain)")
 	chainID := flag.String("chain-id", "vault-local-1", "chain id")
 	rpc := flag.String("rpc", "http://127.0.0.1:26657", "RPC")
@@ -84,10 +84,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ip := wslHint()
-	log.Printf("vault-lab listening on http://127.0.0.1%s", *listen)
-	if ip != "" {
-		log.Printf("WSL tip: open http://%s%s from Windows", ip, *listen)
+	ta := ln.Addr().(*net.TCPAddr)
+	log.Printf("vault-lab listening on http://%s", ta)
+	if !ta.IP.IsLoopback() {
+		log.Printf("WARNING: vault-lab is bound to a non-loopback address and can sign transactions with local keys; anyone who can reach it can spend from them")
+		if ip := wslHint(); ip != "" {
+			log.Printf("WSL tip: open http://%s:%d from Windows", ip, ta.Port)
+		}
 	}
 	log.Printf("  home=%s chain=%s key=%s provider=%s", *home, *chainID, *key, *provider)
 	log.Fatal(http.Serve(ln, sameOriginOnly(mux)))

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/vaultchain/vaultchain/pkg/chunk"
+	"github.com/vaultchain/vaultchain/pkg/readauth"
 )
 
 // complete reports whether the whole object for m is stored (and readable) here.
@@ -21,12 +22,12 @@ func (s *server) complete(m chunk.Manifest) bool {
 
 // fetchObject copies an object from another provider's HTTP endpoint into the
 // local store, verifying it against the chain-committed root (ingest).
-func (s *server) fetchObject(endpoint string, m chunk.Manifest) error {
+func (s *server) fetchObject(endpoint, peer string, m chunk.Manifest) error {
 	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(endpoint, "/")+"/v1/objects/"+m.Root, nil)
 	if err != nil {
 		return err
 	}
-	if err := s.signRead(req, m.Root); err != nil {
+	if err := s.signRead(req, peer, m.Root); err != nil {
 		return err
 	}
 	cl := &http.Client{Timeout: 30 * time.Minute}
@@ -43,5 +44,17 @@ func (s *server) fetchObject(endpoint string, m chunk.Manifest) error {
 	return err
 }
 
-// signRead attaches read credentials to an outgoing request (see access.go).
-func (s *server) signRead(req *http.Request, root string) error { return nil }
+// signRead attaches a short-lived read token for (peer, root) to an outgoing
+// request, signed with this provider's key. The peer authorises it because this
+// provider holds an assigned or active replica of a deal for the root.
+func (s *server) signRead(req *http.Request, peer, root string) error {
+	if s.readSign == nil {
+		return nil
+	}
+	tok, err := readauth.Sign(peer, root, time.Now().Add(2*time.Minute), s.readPub, s.readSign)
+	if err != nil {
+		return err
+	}
+	readauth.Attach(req, tok)
+	return nil
+}

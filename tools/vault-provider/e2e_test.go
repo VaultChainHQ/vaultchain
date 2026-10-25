@@ -18,7 +18,9 @@ import (
 	vcrypto "github.com/vaultchain/vaultchain/crypto"
 	"github.com/vaultchain/vaultchain/node"
 	"github.com/vaultchain/vaultchain/pkg/chunk"
+	"github.com/vaultchain/vaultchain/pkg/readauth"
 	vtypes "github.com/vaultchain/vaultchain/types"
+	"github.com/vaultchain/vaultchain/x/access"
 	"github.com/vaultchain/vaultchain/x/storage"
 )
 
@@ -158,7 +160,40 @@ func TestEndToEndAgainstRealChain(t *testing.T) {
 		t.Fatalf("upload after deal: %d", c)
 	}
 
+	readTok := func(a acct) string {
+		tok, err := readauth.Sign(prov.addr, m.Root, time.Now().Add(time.Minute), a.pub, func(b []byte) ([]byte, error) { return a.priv.Sign(b) })
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	getAs := func(tok string) int {
+		req, _ := http.NewRequest("GET", ps.URL+"/v1/objects/"+m.Root, nil)
+		if tok != "" {
+			readauth.Attach(req, tok)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	// Access enforcement against the real chain: owner yes, anonymous and a
+	// stranger no, a grant to the stranger yes, then a "*" grant opens it to all.
+	if c := getAs(""); c != http.StatusUnauthorized {
+		t.Fatalf("anonymous read of a private object: %d", c)
+	}
+	if c := getAs(readTok(bob)); c != http.StatusForbidden {
+		t.Fatalf("stranger read: %d", c)
+	}
+	mustOK(alice, access.MsgGrantAccess{Type: access.MsgTypeGrantAccess, CID: m.Root, Grantee: bob.addr, Capability: access.CapabilityRead})
+	if c := getAs(readTok(bob)); c != http.StatusOK {
+		t.Fatalf("granted reader: %d", c)
+	}
 	req, _ := http.NewRequest("GET", ps.URL+"/v1/objects/"+m.Root, nil)
+	readauth.Attach(req, readTok(alice))
 	req.Header.Set("Range", "bytes=262000-263000")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -169,14 +204,15 @@ func TestEndToEndAgainstRealChain(t *testing.T) {
 	if resp.StatusCode != 206 || !bytes.Equal(got, data[262000:263001]) || resp.Header.Get("Content-Type") != "video/mp4" {
 		t.Fatalf("ranged download: %d ct=%q len=%d", resp.StatusCode, resp.Header.Get("Content-Type"), len(got))
 	}
-	resp, err = http.Get(ps.URL + "/v1/objects/" + m.Root)
+	mustOK(alice, access.MsgGrantAccess{Type: access.MsgTypeGrantAccess, CID: m.Root, Grantee: access.Public, Capability: access.CapabilityRead})
+	resp, err = http.Get(ps.URL + "/v1/objects/" + m.Root) // anonymous: now public
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, _ = io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if !bytes.Equal(got, data) {
-		t.Fatal("full download mismatch")
+	if resp.StatusCode != 200 || !bytes.Equal(got, data) {
+		t.Fatalf("public full download: %d", resp.StatusCode)
 	}
 	// Different (never committed) content is refused by the provider.
 	other, _, _ := chunk.BuildBytes([]byte("not committed"), chunk.DefaultChunkSize, "text/plain", "n")
