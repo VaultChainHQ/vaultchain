@@ -25,10 +25,12 @@ import (
 // Positive decisions are cached for a few seconds so Range streaming does not
 // hit the chain on every request; denials are never cached.
 
-const (
-	publicGrantee  = "*"
-	accessCacheTTL = 5 * time.Second
-)
+const publicGrantee = "*"
+
+// accessCacheTTL bounds how long a revoked grant keeps working at a provider:
+// positive decisions are re-checked against the chain after this long. It is a
+// variable only so tests can shorten it.
+var accessCacheTTL = 5 * time.Second
 
 type decision struct {
 	ok     bool

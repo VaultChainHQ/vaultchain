@@ -14,7 +14,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	vcrypto "github.com/vaultchain/vaultchain/crypto"
 	"github.com/vaultchain/vaultchain/pkg/chunk"
+	"github.com/vaultchain/vaultchain/pkg/client"
 	"github.com/vaultchain/vaultchain/pkg/readauth"
 	"github.com/vaultchain/vaultchain/x/access"
 	"github.com/vaultchain/vaultchain/x/storage"
@@ -41,7 +43,7 @@ func cmdTxAccess() *cobra.Command {
 		Use:   "access",
 		Short: "Access module transactions",
 	}
-	root.AddCommand(cmdTxGrantAccess())
+	root.AddCommand(cmdTxGrantAccess(), cmdTxRevokeAccess())
 	return root
 }
 
@@ -216,24 +218,113 @@ submits them as a signed proof. Normally vault-provider does this itself
 }
 
 func cmdTxGrantAccess() *cobra.Command {
-	return &cobra.Command{
+	var granteePub string
+	cmd := &cobra.Command{
 		Use:   "grant [cid] [grantee] [capability] [expiry_height]",
 		Short: "Grant read/write access to a CID (grantee * = anyone, read only)",
-		Args:  cobra.ExactArgs(4),
+		Long: `Grant read/write access to a CID. expiry_height 0 means no expiry.
+
+For an encrypted object the file key is also sealed to the grantee (so they can
+decrypt): the signer must be the owner and hold the key. The grantee's public key
+is looked up on chain (accounts that have sent a transaction); pass
+--grantee-pubkey for one that has not. Encrypted objects cannot be granted to *.`,
+		Args: cobra.ExactArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			exp, err := strconv.ParseInt(args[3], 10, 64)
 			if err != nil {
 				return err
 			}
-			return postTx(cmd, access.MsgGrantAccess{
+			msg := access.MsgGrantAccess{
 				Type:       access.MsgTypeGrantAccess,
 				CID:        args[0],
 				Grantee:    args[1],
 				Capability: args[2],
 				ExpiryH:    exp,
-			})
+			}
+			c := client.New(restBase(cmd))
+			m, err := c.Manifest(msg.CID)
+			if err != nil && !client.IsNotFound(err) {
+				return err
+			}
+			if err == nil && m.Encrypted() {
+				if msg.Grantee == access.Public {
+					return fmt.Errorf("an encrypted object cannot be granted publicly")
+				}
+				rec, err := fromRecord(cmd)
+				if err != nil {
+					return err
+				}
+				if msg.KeyEnvelope, err = c.GrantEnvelope(msg.CID, rec, msg.Grantee, granteePub); err != nil {
+					return err
+				}
+			}
+			return postTx(cmd, msg)
 		},
 	}
+	cmd.Flags().StringVar(&granteePub, "grantee-pubkey", "", "hex public key of the grantee (default: looked up on chain)")
+	return cmd
+}
+
+func cmdTxRevokeAccess() *cobra.Command {
+	var grantID uint64
+	cmd := &cobra.Command{
+		Use:   "revoke [cid] [grantee]",
+		Short: "Revoke access to a CID (owner only)",
+		Long: `Revoke access to a CID. Name a grantee (address, or * for the public grant) to
+remove every grant of that CID to them, or use --grant-id (grantee may then be
+omitted) to remove one grant. Providers stop serving the object to the grantee
+within a few seconds. Revocation cannot make a reader forget a decryption key
+they already received: see docs/ENCRYPTION.md.`,
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			msg := access.MsgRevokeAccess{Type: access.MsgTypeRevokeAccess, CID: args[0], GrantID: grantID}
+			if len(args) == 2 {
+				msg.Grantee = args[1]
+			}
+			if msg.Grantee == "" && msg.GrantID == 0 {
+				return fmt.Errorf("give a grantee or --grant-id")
+			}
+			return postTx(cmd, msg)
+		},
+	}
+	cmd.Flags().Uint64Var(&grantID, "grant-id", 0, "revoke just this grant id")
+	return cmd
+}
+
+// fromRecord returns the keyring record of the --from key.
+func fromRecord(cmd *cobra.Command) (vcrypto.KeyRecord, error) {
+	name, _ := cmd.Flags().GetString("from")
+	if name == "" {
+		return vcrypto.KeyRecord{}, fmt.Errorf("--from key name required")
+	}
+	kr, err := vcrypto.NewKeyring(homeFlag(cmd))
+	if err != nil {
+		return vcrypto.KeyRecord{}, err
+	}
+	return kr.Get(name)
+}
+
+// commitEncrypted encrypts f, writes the ciphertext to cipherOut, and commits
+// (or with dryRun just prints) a manifest over the ciphertext.
+func commitEncrypted(cmd *cobra.Command, f *os.File, cipherOut, mimeType, name string, chunkSize int, dryRun bool) error {
+	rec, err := fromRecord(cmd)
+	if err != nil {
+		return fmt.Errorf("--encrypt needs --from (the owner's key): %w", err)
+	}
+	if cipherOut == "" {
+		cipherOut = f.Name() + ".vle"
+	}
+	msg, err := client.EncryptToFile(f, cipherOut, rec, mimeType, name, chunkSize)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "encrypted: root=%s size=%d ciphertext=%s\n", msg.Root, msg.Size, cipherOut)
+	if dryRun {
+		b, _ := json.MarshalIndent(msg, "", "  ")
+		fmt.Fprintln(cmd.OutOrStdout(), string(b))
+		return nil
+	}
+	return postTx(cmd, msg)
 }
 
 func cmdTxCommitManifest() *cobra.Command {
@@ -242,6 +333,8 @@ func cmdTxCommitManifest() *cobra.Command {
 		name      string
 		chunkSize int
 		dryRun    bool
+		encrypt   bool
+		cipherOut string
 	)
 	cmd := &cobra.Command{
 		Use:   "commit-manifest [file]",
@@ -265,6 +358,9 @@ func cmdTxCommitManifest() *cobra.Command {
 					mimeType = "application/octet-stream"
 				}
 			}
+			if encrypt {
+				return commitEncrypted(cmd, f, cipherOut, mimeType, name, chunkSize, dryRun)
+			}
 			m, _, err := chunk.Build(f, chunkSize, mimeType, name)
 			if err != nil {
 				return err
@@ -284,5 +380,7 @@ func cmdTxCommitManifest() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "display name (default: file base name)")
 	cmd.Flags().IntVar(&chunkSize, "chunk-size", chunk.DefaultChunkSize, "chunk size in bytes")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print the manifest instead of submitting")
+	cmd.Flags().BoolVar(&encrypt, "encrypt", false, "encrypt client-side first (see docs/ENCRYPTION.md); the manifest then describes the ciphertext")
+	cmd.Flags().StringVar(&cipherOut, "cipher-out", "", "with --encrypt: where to write the ciphertext to upload (default: <file>.vle)")
 	return cmd
 }

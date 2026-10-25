@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -169,5 +171,52 @@ func TestDeniedReadsAreNotCached(t *testing.T) {
 	e.chain.grants = append(e.chain.grants, map[string]any{"cid": root, "grantee": stranger.addr, "capability": "write"})
 	if c := statusOf(e.get("/v1/objects/"+root, auth(tok)...)); c != 200 {
 		t.Fatal(fmt.Sprint("grant not honoured immediately: ", c))
+	}
+}
+
+func TestRevokedGrantStopsServingAfterTheCacheWindow(t *testing.T) {
+	old := accessCacheTTL
+	accessCacheTTL = 150 * time.Millisecond
+	t.Cleanup(func() { accessCacheTTL = old })
+
+	e, owner, root, data := privateEnv(t)
+	reader := newAcct(t)
+	obj := "/v1/objects/" + root
+	// One long-lived token: revocation must work on chain state, not on token expiry.
+	tok := e.token(reader, provAddr, root, time.Hour)
+	if c := statusOf(e.get(obj, auth(tok)...)); c != 403 {
+		t.Fatalf("before grant: %d", c)
+	}
+	e.chain.grants = []map[string]any{{"cid": root, "grantee": reader.addr, "capability": "read"}}
+	if c := statusOf(e.get(obj, auth(tok)...)); c != 200 {
+		t.Fatalf("with grant: %d", c)
+	}
+	// The owner revokes on chain: the grant disappears from the list.
+	e.chain.grants = nil
+	time.Sleep(accessCacheTTL + 100*time.Millisecond)
+	if c := statusOf(e.get(obj, auth(tok)...)); c != 403 {
+		t.Fatalf("revoked reader still served: %d", c)
+	}
+	rr := e.get(obj, append(auth(tok), "Range", "bytes=0-9")...)
+	if c := statusOf(rr); c != 403 {
+		t.Fatalf("revoked reader, ranged: %d", c)
+	}
+	// The owner is unaffected.
+	r := e.get(obj, auth(e.token(owner, provAddr, root, time.Minute))...)
+	body, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if r.StatusCode != 200 || !bytes.Equal(body, data) {
+		t.Fatalf("owner after revoking a grant: %d", r.StatusCode)
+	}
+
+	// Revoking the public grant makes the object private again.
+	e.chain.grants = []map[string]any{{"cid": root, "grantee": "*", "capability": "read"}}
+	if c := statusOf(e.get(obj)); c != 200 {
+		t.Fatalf("public: %d", c)
+	}
+	e.chain.grants = nil
+	time.Sleep(accessCacheTTL + 100*time.Millisecond)
+	if c := statusOf(e.get(obj)); c != 401 {
+		t.Fatalf("anonymous after the public grant was revoked: %d", c)
 	}
 }

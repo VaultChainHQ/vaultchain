@@ -57,9 +57,10 @@ func cmdKeysList() *cobra.Command {
 }
 
 func cmdKeysShow() *cobra.Command {
-	return &cobra.Command{
+	var pub bool
+	c := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show key address",
+		Short: "Show key address (or public key with --pubkey)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kr, err := vcrypto.NewKeyring(homeFlag(cmd))
@@ -70,8 +71,14 @@ func cmdKeysShow() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if pub {
+				fmt.Fprintln(os.Stdout, rec.PubKeyHex)
+				return nil
+			}
 			fmt.Fprintln(os.Stdout, rec.Address)
 			return nil
 		},
 	}
+	c.Flags().BoolVar(&pub, "pubkey", false, "print the hex public key instead of the address")
+	return c
 }
